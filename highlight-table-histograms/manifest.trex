@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest manifest-version="0.1" xmlns="http://www.tableau.com/xml/extension_manifest">
+  <worksheet-extension id="com.example.viz.highlighttable.histograms" extension-version="1.0.0">
+    <default-locale>en_US</default-locale>
+    <name resource-id="name"/>
+    <description>Highlight table with marginal histograms — a color-encoded matrix with column totals on top and row totals on the right. Fully customizable from a config modal.</description>
+    <author name="difemaro" email="difemaro@gmail.com" organization="difemaro" website="https://github.com/difemaro/tableau-viz-extensions"/>
+    <!-- 1.12 = Tableau 2024.2; required for the Format Extension button. -->
+    <min-api-version>1.12</min-api-version>
+    <source-location>
+      <!-- LOCAL DEV: serve the Viz_Extensions ROOT on port 1234 (so the shared
+           ../lib is reachable), then this extension is at the subpath below. -->
+      <url>http://localhost:1234/highlight-table-histograms/index.html</url>
+    </source-location>
+    <icon/>
+    <!-- Adds the "Format Extension" button to the Marks card. Clicking it calls
+         the configure() callback registered via initializeAsync({configure})
+         in src/viz.js, which opens the settings modal. Must come after <icon>
+         (and <permissions>) and before the <encoding> tiles. -->
+    <context-menu>
+      <configure-context-menu-item />
+    </context-menu>
+    <!-- ENCODINGS = the tiles users drop fields onto in the Marks card.
+         Row + Column accept SEVERAL pills (nested headers); Value is one
+         measure that drives the cell color and the row/column histograms. -->
+    <encoding id="row">
+      <display-name>Row</display-name>
+      <fields max-count="10"/>
+    </encoding>
+    <encoding id="column">
+      <display-name>Column</display-name>
+      <fields max-count="10"/>
+    </encoding>
+    <encoding id="value">
+      <display-name>Value</display-name>
+      <fields max-count="1"/>
+    </encoding>
+  </worksheet-extension>
+  <resources>
+    <resource id="name">
+      <text locale="en_US">Highlight Table + Histograms</text>
+    </resource>
+  </resources>
+</manifest>
