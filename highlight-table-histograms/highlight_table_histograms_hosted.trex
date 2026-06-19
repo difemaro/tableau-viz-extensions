@@ -4,7 +4,7 @@
     <default-locale>en_US</default-locale>
     <name resource-id="name"/>
     <description>Highlight table with marginal histograms — a color-encoded matrix with column totals on top and row totals on the right. Fully customizable from a config modal.</description>
-    <author name="difemaro" email="difemaro@gmail.com" organization="difemaro" website="https://github.com/difemaro/tableau-viz-extensions"/>
+    <author name="Diego Martinez" email="dmartinez@modux.co" organization="Modux" website="https://www.modux.co"/>
     <!-- 1.12 = Tableau 2024.2; required for the Format Extension button. -->
     <min-api-version>1.12</min-api-version>
     <source-location>
@@ -13,7 +13,7 @@
            manifest.trex) to add the published extension in Tableau. -->
       <url>https://difemaro.github.io/tableau-viz-extensions/highlight-table-histograms/index.html</url>
     </source-location>
-    <icon/>
+    <icon>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</icon>
     <!-- Adds the "Format Extension" button to the Marks card (opens the
          configure() callback registered in src/viz.js). Must come after <icon>
          and before the <encoding> tiles. -->
@@ -27,6 +27,7 @@
         <role-type>discrete-measure</role-type>
       </role-spec>
       <fields max-count="10"/>
+      <encoding-icon token="flow" />
       <tooltip>Row - drag one or more dimensions here; multiple pills nest as grouped headers.</tooltip>
     </encoding>
     <encoding id="column">
@@ -36,6 +37,7 @@
         <role-type>discrete-measure</role-type>
       </role-spec>
       <fields max-count="10"/>
+      <encoding-icon token="level" />
       <tooltip>Column - drag one or more dimensions here; multiple pills nest as grouped headers.</tooltip>
     </encoding>
     <encoding id="value">
@@ -44,6 +46,7 @@
         <role-type>continuous-measure</role-type>
       </role-spec>
       <fields max-count="1"/>
+      <encoding-icon token="hash" />
       <tooltip>Value - drag one measure here; it drives the cell color and the histograms.</tooltip>
     </encoding>
   </worksheet-extension>
