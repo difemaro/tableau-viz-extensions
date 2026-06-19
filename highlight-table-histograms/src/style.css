@@ -45,6 +45,79 @@ html, body {
 }
 .hth-empty b { color: var(--hth-ink); }
 
+/* ---- rich empty-state "get started" card ---- */
+.hth-empty-card {
+  width: 100%;
+  max-width: 560px;
+  text-align: left;
+  border: 1px solid var(--hth-line);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 14px 40px -26px rgba(20, 30, 45, 0.5);
+  padding: 22px 24px;
+}
+.hth-empty-head {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.hth-empty-thumb {
+  flex: 0 0 auto;
+  width: 84px;
+  height: 84px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.hth-empty-thumb svg { display: block; }
+.hth-empty-title {
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  color: var(--hth-ink);
+}
+.hth-empty-desc {
+  margin-top: 5px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--hth-muted);
+}
+.hth-empty-desc b { color: var(--hth-ink); }
+.hth-empty-guide {
+  margin-top: 18px;
+  border: 1px solid var(--hth-line);
+  border-radius: 10px;
+  padding: 14px 16px;
+  background: #fafbfc;
+}
+.hth-empty-guide-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--hth-muted);
+  margin-bottom: 8px;
+}
+.hth-empty-guide-row {
+  font-size: 14px;
+  line-height: 1.9;
+  color: var(--hth-ink);
+}
+.hth-empty-guide-row b { font-weight: 600; }
+/* field-tile chips: dimensions blue, measures green (Tableau-style) */
+.hth-chip {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 100px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  vertical-align: baseline;
+}
+.hth-chip.dim { background: #5688c7; }
+.hth-chip.measure { background: #4b9e5f; }
+.hth-chip.filled { box-shadow: inset 0 0 0 2px rgba(255,255,255,0.6), 0 0 0 1.5px currentColor; }
+
 /* ---- chart wrapper ---- */
 .hth {
   width: 100%;

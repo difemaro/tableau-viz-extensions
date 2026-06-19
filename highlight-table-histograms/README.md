@@ -121,9 +121,9 @@ This extension is published at
    `https://difemaro.github.io/tableau-viz-extensions/`.
 2. The extension is then live at
    `https://difemaro.github.io/tableau-viz-extensions/highlight-table-histograms/index.html`
-   — already set as the `<url>` in **`manifest.hosted.trex`**.
-3. In Tableau, add the extension with **`manifest.hosted.trex`** (the HTTPS
-   build), not `manifest.trex` (which stays on `localhost` for local dev).
+   — already set as the `<url>` in **`highlight_table_histograms_hosted.trex`**.
+3. In Tableau, add the extension with **`highlight_table_histograms_hosted.trex`**
+   (the HTTPS build), not `manifest.trex` (which stays on `localhost` for local dev).
 
 > The shared API library lives at the **repo root** (`/lib`), and every
 > extension's `index.html` loads it via `../lib/…`. On Pages that resolves to
@@ -139,8 +139,8 @@ tableau-viz-extensions/            # repo root (serve this for local dev)
 └── highlight-table-histograms/
     ├── index.html            # #viz host + config-modal markup (loads ../lib/…)
     ├── preview.html          # standalone browser preview with mock data
-    ├── manifest.trex         # LOCAL — encodings (Row/Column/Value), localhost URL
-    ├── manifest.hosted.trex  # HOSTED — same, with the GitHub Pages URL
+    ├── manifest.trex                          # LOCAL — encodings, localhost URL
+    ├── highlight_table_histograms_hosted.trex # HOSTED — same, GitHub Pages URL
     └── src/
         ├── viz.js            # connect → encodings → pivot → render + config modal
         └── style.css         # grid layout, cells, histograms, modal

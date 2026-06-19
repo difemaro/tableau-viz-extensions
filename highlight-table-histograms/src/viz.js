@@ -137,11 +137,7 @@
         !fields.column || !fields.column.length ||
         !fields.value || !fields.value.length) {
       lastModel = null;
-      showMessage(
-        'Drop at least one field on each tile in the Marks card: ' +
-        '<b>Row</b>, <b>Column</b>, and <b>Value</b>. ' +
-        'Row and Column accept several pills (nested headers).'
-      );
+      showEmptyState(fields);
       return;
     }
 
@@ -1086,6 +1082,63 @@
   function showMessage(html) {
     applyTheme();
     host.innerHTML = '<div class="hth-empty"><p>' + html + '</p></div>';
+  }
+
+  // Rich "get started" card shown when the Row/Column/Value tiles aren't all
+  // filled (our own version of the empty-state guide — Tableau's catalog
+  // thumbnail/"Trusted" badge only exist for verified extensions).
+  function showEmptyState(fields) {
+    applyTheme();
+    fields = fields || {};
+    const chip = (id, label, kind) => {
+      const got = fields[id] && fields[id].length;
+      return '<span class="hth-chip ' + kind + (got ? ' filled' : '') + '">' +
+        label + (got ? ': ' + escapeHtml(fields[id].join(', ')) : '') + '</span>';
+    };
+    host.innerHTML =
+      '<div class="hth-empty"><div class="hth-empty-card">' +
+        '<div class="hth-empty-head">' +
+          '<div class="hth-empty-thumb">' + buildThumb() + '</div>' +
+          '<div class="hth-empty-meta">' +
+            '<div class="hth-empty-title">Highlight Table + Histograms</div>' +
+            '<div class="hth-empty-desc">A color-encoded matrix with column totals across ' +
+            'the top and row totals down the right. Fully customizable from the &#9881; gear ' +
+            'or the <b>Format Extension</b> button.</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="hth-empty-guide">' +
+          '<div class="hth-empty-guide-title">Get started</div>' +
+          '<div class="hth-empty-guide-row">Drag one or more <b>dimensions</b> onto ' +
+            chip('row', 'Row', 'dim') + ' and ' + chip('column', 'Column', 'dim') +
+            ', and one <b>measure</b> onto ' + chip('value', 'Value', 'measure') + '.' +
+          '</div>' +
+        '</div>' +
+      '</div></div>';
+  }
+
+  // Inline SVG thumbnail: a mini highlight table (top bars + heat grid).
+  function buildThumb() {
+    const N = 5, gap = 3, size = 16, m = 3, topH = 28, gapTop = 6;
+    const gridY = topH + gapTop;
+    const a = hexToRgb('#ededf3'), b = hexToRgb('#34346b');
+    const lerp = (t) => {
+      const c = a.map((ch, i) => Math.round(ch + (b[i] - ch) * t));
+      return `rgb(${c[0]},${c[1]},${c[2]})`;
+    };
+    const pat = [[.15,.4,.55,.78,.95],[.3,.2,.66,.45,.8],[.5,.6,.25,.7,.4],[.7,.45,.85,.3,.6],[.92,.75,.5,.65,.2]];
+    const tops = [.5,.82,.66,1,.74];
+    let svg = '';
+    for (let c = 0; c < N; c++) {
+      const bh = 8 + tops[c] * (topH - 8), x = m + c * (size + gap);
+      svg += `<rect x="${x}" y="${topH - bh}" width="${size}" height="${bh}" rx="1.5" fill="${lerp(tops[c])}"/>`;
+    }
+    for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
+      const x = m + c * (size + gap), y = gridY + r * (size + gap);
+      svg += `<rect x="${x}" y="${y}" width="${size}" height="${size}" rx="2" fill="${lerp(pat[r][c])}"/>`;
+    }
+    const W = m * 2 + N * size + (N - 1) * gap;
+    const Ht = gridY + N * size + (N - 1) * gap + m;
+    return `<svg viewBox="0 0 ${W} ${Ht}" width="84" height="84" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Highlight table preview">${svg}</svg>`;
   }
   function escapeHtml(s) {
     return String(s).replace(/[&<>"]/g, (c) =>
