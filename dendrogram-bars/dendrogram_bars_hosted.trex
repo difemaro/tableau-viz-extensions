@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest manifest-version="0.1" xmlns="http://www.tableau.com/xml/extension_manifest">
+  <worksheet-extension id="com.example.viz.dendrogrambars" extension-version="1.0.0">
+    <default-locale>en_US</default-locale>
+    <name resource-id="name"/>
+    <description>Dendrogram Bars — a fan-out bar chart where every category bar curves back to a single root total. Sorted, colored, and labelled. Fully customizable from a config modal.</description>
+    <author name="Diego Martinez" email="dmartinez@modux.co" organization="Modux" website="https://www.modux.co"/>
+    <!-- 1.12 = Tableau 2024.2; required for the Format Extension button. -->
+    <min-api-version>1.12</min-api-version>
+    <source-location>
+      <!-- HOSTED on GitHub Pages. The shared lib lives at the repo root, so
+           this extension stays under its subfolder. Use THIS manifest (not
+           manifest.trex) to add the published extension in Tableau. -->
+      <url>https://difemaro.github.io/tableau-viz-extensions/dendrogram-bars/index.html</url>
+    </source-location>
+    <icon/>
+    <context-menu>
+      <configure-context-menu-item />
+    </context-menu>
+    <encoding id="category">
+      <display-name>Category</display-name>
+      <role-spec>
+        <role-type>discrete-dimension</role-type>
+      </role-spec>
+      <fields max-count="1"/>
+      <encoding-icon token="flow" />
+      <tooltip>Category - drag one dimension here; one bar is drawn per value.</tooltip>
+    </encoding>
+    <encoding id="value">
+      <display-name>Value</display-name>
+      <role-spec>
+        <role-type>continuous-measure</role-type>
+      </role-spec>
+      <fields max-count="1"/>
+      <encoding-icon token="hash" />
+      <tooltip>Value - drag one measure here; it drives bar length and the root total.</tooltip>
+    </encoding>
+  </worksheet-extension>
+  <resources>
+    <resource id="name">
+      <text locale="en_US">Dendrogram Bars</text>
+    </resource>
+  </resources>
+</manifest>

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Preview — Dendrogram Bars (no Tableau needed)</title>
+  <link rel="stylesheet" href="./src/style.css" />
+</head>
+<body>
+  <div id="viz"></div>
+  <button id="cfg-open" title="Configure" aria-label="Configure">&#9881;</button>
+  <div id="cfg-overlay" hidden>
+    <div id="cfg-modal" role="dialog" aria-modal="true" aria-label="Chart settings">
+      <header id="cfg-head">
+        <span id="cfg-title">Settings</span>
+        <div class="cfg-head-actions">
+          <button id="cfg-reset" type="button">Reset</button>
+          <button id="cfg-done" type="button">Done</button>
+        </div>
+      </header>
+      <div id="cfg-body"></div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       MOCK of the Tableau Extensions API for local preview only.
+       Feeds sample Sub-Category x Sales data so you can iterate on
+       the chart + config modal without opening Tableau.
+       (index.html is what Tableau actually loads — not this file.)
+       ============================================================ -->
+  <script>
+    (function () {
+      const SUBCATS = [
+        ['Phones', 330007], ['Chairs', 328449], ['Storage', 223844], ['Tables', 206966],
+        ['Binders', 203413], ['Machines', 189239], ['Accessories', 167380], ['Copiers', 149528],
+        ['Bookcases', 114880], ['Appliances', 107532], ['Furnishings', 91705], ['Paper', 78479],
+        ['Supplies', 46674], ['Art', 27119], ['Envelopes', 16476], ['Labels', 12486], ['Fasteners', 3024],
+      ];
+      const columns = [
+        { fieldName: 'Sub-Category', dataType: 'string' },
+        { fieldName: 'SUM(Sales)', dataType: 'float' },
+      ];
+      const data = SUBCATS.map(([name, v]) => ([
+        { value: name, formattedValue: name },
+        { value: v, formattedValue: String(v) },
+      ]));
+
+      let selected = [];
+      const settingsStore = {};
+      window.tableau = {
+        TableauEventType: { SummaryDataChanged: 'summary-data-changed', MarkSelectionChanged: 'mark-selection-changed' },
+        SelectOptions: { Simple: 'select-options-simple', Toggle: 'select-options-toggle' },
+        extensions: {
+          initializeAsync: () => Promise.resolve(),
+          settings: {
+            get: (k) => settingsStore[k],
+            set: (k, v) => { settingsStore[k] = v; },
+            saveAsync: () => Promise.resolve(),
+          },
+          worksheetContent: {
+            worksheet: {
+              name: 'Sales by Sub-Category (preview)',
+              addEventListener: () => {},
+              hoverTupleAsync: (id, tip) => { console.log('hoverTupleAsync', id, tip); return Promise.resolve(); },
+              selectTuplesAsync: (ids, opt) => { selected = ids.slice(); console.log('selectTuplesAsync', ids, opt); return Promise.resolve(); },
+              getSelectedMarksAsync: () => Promise.resolve({ data: [] }),
+              getVisualSpecificationAsync: () => Promise.resolve({
+                activeMarksSpecificationIndex: 0,
+                marksSpecifications: [{
+                  encodings: [
+                    { id: 'category', field: { name: 'Sub-Category' } },
+                    { id: 'value', field: { name: 'Sales' } },
+                  ],
+                }],
+              }),
+              getSummaryDataReaderAsync: () => Promise.resolve({
+                pageCount: 1,
+                getPageAsync: () => Promise.resolve({ columns, data }),
+                releaseAsync: () => Promise.resolve(),
+              }),
+            },
+          },
+        },
+      };
+    })();
+  </script>
+  <script src="./src/viz.js"></script>
+</body>
+</html>
