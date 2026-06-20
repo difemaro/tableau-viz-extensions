@@ -39,7 +39,9 @@
 
     // bars
     sort: 'desc',            // desc | asc | none
-    rowHeight: 28,           // px per category (chart scrolls when it overflows)
+    fitHeight: true,         // fit all rows to the pane height (no scroll);
+                             //   off → use rowHeight px/row and scroll on overflow
+    rowHeight: 28,           // px per category (used only when fitHeight is off)
     barThickness: 0.55,      // bar height as a fraction of its row band
     barRadius: 20,           // corner radius (high = pill); clamped to barH/2
     barMinWidth: 4,          // keep tiny values visible
@@ -113,9 +115,22 @@
         });
       }
 
+      // Re-render (sized to the new host width) on any size change. We listen
+      // BOTH ways and coalesce through rAF: ResizeObserver catches pane/object
+      // resizes, window 'resize' is a belt-and-braces fallback for hosts where
+      // RO under-fires. Without a re-render the SVG would keep its old pixel
+      // width and only visually scale, distorting the chart.
       if (window.ResizeObserver) {
-        new ResizeObserver(() => lastModel && render(lastModel)).observe(host);
+        new ResizeObserver(scheduleRender).observe(host);
       }
+      window.addEventListener('resize', scheduleRender);
+      // Backstop: poll the host size. Tableau often sizes the extension iframe
+      // to its final dimensions AFTER first paint, and in some hosts neither
+      // ResizeObserver nor window 'resize' fires for that — leaving the chart
+      // stuck at its initial (narrow) width. Polling guarantees we notice the
+      // change and re-render to fill the real width. Cheap (no work unless the
+      // measured size actually changed).
+      startSizeWatch();
 
       wireModal();
       wireInteractivity();
@@ -177,6 +192,47 @@
     return items;
   }
 
+  // Coalesce resize-driven re-renders into a single rAF so a burst of resize
+  // events (drag-resizing a pane) produces one redraw per frame, each sized to
+  // the current host width.
+  let renderRAF = 0;
+  function scheduleRender() {
+    if (!lastModel || renderRAF) return;
+    renderRAF = requestAnimationFrame(() => { renderRAF = 0; render(lastModel); });
+  }
+
+  // Poll the host size as a backstop for resize events that don't fire (see
+  // init). Re-renders only when the measured width/height actually changes.
+  // Renders DIRECTLY (not via the rAF-coalesced scheduleRender) so the backstop
+  // works even where rAF callbacks are starved; the 250ms interval is its own
+  // throttle.
+  let watchedW = 0, watchedH = 0;
+  function startSizeWatch() {
+    setInterval(() => {
+      // Track the viewport too — in hosts where host.clientWidth is stuck, the
+      // viewport width is what actually changes when the pane is resized.
+      const w = host.clientWidth + 0.001 * (window.innerWidth || 0);
+      const h = host.clientHeight;
+      if (w === watchedW && h === watchedH) return;
+      watchedW = w; watchedH = h;
+      if (lastModel) render(lastModel);
+    }, 250);
+  }
+
+  // Decide the drawing width. Prefer the laid-out wrapper's content width; if
+  // that's clearly under the viewport (container hasn't stretched / host
+  // reported a bogus small width), fall back to the viewport minus our padding.
+  const HOST_PAD_X = 32;   // #viz horizontal padding (16 left + 16 right)
+  function measureWidth(wrap) {
+    const vpW = (document.documentElement && document.documentElement.clientWidth) ||
+                window.innerWidth || 0;
+    const wrapW = wrap.clientWidth || 0;
+    const vpAvail = Math.max(0, vpW - HOST_PAD_X);
+    // Use the wrapper width unless it's well under the viewport (≈ not stretched).
+    const W = wrapW >= vpAvail * 0.75 ? wrapW : vpAvail;
+    return Math.max(10, Math.round(W)) || 800;
+  }
+
   /* ===========================================================
      ▼▼▼  BUILD ZONE — render the chart from the model  ▼▼▼
      =========================================================== */
@@ -190,11 +246,18 @@
     if (!n) { showMessage('No data to display yet.'); return; }
 
     const wrap = el('div', 'db');
-    if (config.title) wrap.appendChild(el('div', 'db-title', config.title));
+    let titleEl = null;
+    if (config.title) { titleEl = el('div', 'db-title', config.title); wrap.appendChild(titleEl); }
+    // Append the wrapper NOW (before building the SVG) so we can measure the
+    // actually laid-out content box. host.clientWidth/Height have proven
+    // unreliable in some Tableau hosts; the stretched wrapper is accurate.
+    host.appendChild(wrap);
 
     // --- geometry --------------------------------------------------
-    const W = host.clientWidth || 800;
-    const containerH = (host.clientHeight || 500) - (config.title ? 34 : 0);
+    const W = measureWidth(wrap);
+    // Available height for the chart = wrapper content box minus the title.
+    const availH = wrap.clientHeight || ((host.clientHeight || 500) - 28);
+    const containerH = Math.max(40, availH - (titleEl ? titleEl.offsetHeight : 0));
     const pad = {
       top: 16,
       right: 14,
@@ -202,10 +265,13 @@
       left: config.showRoot ? 130 : 24,
     };
 
-    // Height grows with the category count so bars keep a usable thickness;
-    // the host scrolls when content is taller than the viewport.
+    // Height behaviour:
+    //  • fitHeight (default): the SVG is exactly the pane height, so every row
+    //    is visible and the rows compress to fit — no scrollbar.
+    //  • off: rows keep `rowHeight` px; when that's taller than the pane the
+    //    SVG grows and #viz scrolls vertically.
     const contentH = n * config.rowHeight + pad.top + pad.bottom;
-    const svgH = Math.max(containerH, contentH);
+    const svgH = config.fitHeight ? containerH : Math.max(containerH, contentH);
     const plotTop = pad.top, plotBottom = svgH - pad.bottom;
     const plotH = plotBottom - plotTop;
     const band = plotH / n;
@@ -223,8 +289,12 @@
     const loVal = vals.length ? Math.min(...vals) : 0;
     const hiVal = vals.length ? Math.max(...vals) : 1;
 
-    const svg = svgEl('svg', { class: 'db-svg', width: W, height: svgH,
-      viewBox: `0 0 ${W} ${svgH}`, preserveAspectRatio: 'xMinYMin meet' });
+    // NO viewBox / preserveAspectRatio: we draw in pixels (1 user unit = 1px),
+    // so the chart is never scaled. A viewBox + "meet" would uniformly scale
+    // the whole drawing DOWN (shrinking width too, leaving empty space on the
+    // right) whenever the flex container is shorter than svgH — which is what
+    // made the chart look like it wasn't filling the width in a short pane.
+    const svg = svgEl('svg', { class: 'db-svg', width: W, height: svgH });
 
     // --- optional bottom axis -------------------------------------
     if (config.showAxis) {
@@ -319,7 +389,6 @@
     }
 
     wrap.appendChild(svg);
-    host.appendChild(wrap);
 
     applySelectionStyles();
   }
@@ -646,7 +715,8 @@
     { section: 'Bars', fields: [
       { key: 'sort', label: 'Sort', type: 'select',
         options: [['desc', 'Value ↓'], ['asc', 'Value ↑'], ['none', 'Data order']] },
-      { key: 'rowHeight', label: 'Row height (px)', type: 'range', min: 14, max: 64, step: 2 },
+      { key: 'fitHeight', label: 'Fit to window height', type: 'checkbox' },
+      { key: 'rowHeight', label: 'Row height (px) — when not fitting', type: 'range', min: 14, max: 64, step: 2 },
       { key: 'barThickness', label: 'Bar thickness', type: 'range', min: 0.15, max: 0.95, step: 0.05 },
       { key: 'barRadius', label: 'Corner radius (px)', type: 'range', min: 0, max: 32, step: 1 },
       { key: 'barMinWidth', label: 'Min bar width (px)', type: 'range', min: 0, max: 30, step: 1 },

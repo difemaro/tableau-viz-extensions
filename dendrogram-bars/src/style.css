@@ -18,6 +18,7 @@
 
 html, body {
   margin: 0;
+  width: 100%;
   height: 100%;
   background: var(--db-bg);
   color: var(--db-ink);
@@ -26,9 +27,19 @@ html, body {
 }
 
 #viz {
-  height: 100vh;
+  /* position:fixed + inset:0 sizes #viz to the iframe VIEWPORT directly,
+     independent of whether body/html stretch. This is the pattern Tableau's
+     own Sankey extension uses (`<div style="width:100%;height:100%;
+     position:fixed">`) and is the fix for the chart not filling the width in
+     a dashboard, where the normal block-flow chain doesn't reach full width. */
+  position: fixed;
+  inset: 0;
   padding: 14px 16px;
-  overflow: auto;
+  /* Reserve the vertical scrollbar's gutter so the width stays constant whether
+     or not the chart scrolls; overflow-x hidden is a sub-pixel backstop. */
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
 }
 
 /* ---- chart wrapper ---- */
@@ -40,7 +51,14 @@ html, body {
   margin: 0 0 10px;
   color: var(--db-ink);
 }
-.db-svg { display: block; width: 100%; }
+/* The SVG is sized in pixels (width/height attributes) and re-rendered on
+   resize, so it must NOT be stretched OR shrunk by CSS:
+   - no width:100% (would let a viewBox rescale it),
+   - flex-shrink:0 so the flex column (.db) can't compress its height in a
+     short pane (which previously triggered the uniform down-scaling that left
+     empty space on the right). When the chart is taller than the pane, #viz
+     scrolls instead. */
+.db-svg { display: block; flex: 0 0 auto; }
 .db-svg text { font-family: var(--db-font); }
 
 /* interactive rows: pointer + smooth dim/highlight transitions */
