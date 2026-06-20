@@ -34,7 +34,7 @@
     rootLabel: 'Total',
     rootCaptionSize: 12,
     rootValueSize: 26,
-    totalPrefix: '$',
+    totalPrefix: '',
     totalDecimals: 2,        // total is abbreviated (auto unit), e.g. $2.30M
 
     // bars
@@ -72,7 +72,7 @@
     // value-number format (for the right-hand labels)
     numPrefix: '',
     numSuffix: '',
-    numDecimals: 0,
+    numDecimals: 2,
     numUnit: 'none',         // none | auto | K | M | B
     numThousands: true,
 

@@ -44,6 +44,9 @@
     scalePower: 1,            // gamma: >1 emphasises high values, <1 the low end
 
     // matrix cells
+    fitHeight: true,          // fit all rows to the pane height (no scroll);
+                              //   off → use cellSize px/row and scroll on overflow
+    cellSize: 28,             // px per matrix row (used only when fitHeight is off)
     cellGap: 3,
     cellRadius: 0,
     showCellLabels: false,
@@ -74,7 +77,7 @@
     // number formatting (totals + optional cell labels)
     numPrefix: '',
     numSuffix: '',
-    numDecimals: 0,
+    numDecimals: 2,
     numUnit: 'auto',          // auto | K | M | B | none
     numThousands: true,
   };
@@ -315,8 +318,17 @@
     const rowTracks = [];
     if (config.showTopHist) rowTracks.push(config.topHistHeight + 'px');
     for (let j = 0; j < Cn; j++) rowTracks.push(config.colLabelHeight + 'px');
-    rowTracks.push('minmax(0, 1fr)');
+    // Matrix height behaviour (mirrors the dendrogram's fitHeight option):
+    //  • fitHeight (default): the matrix track is 1fr, so every row is visible
+    //    and rows compress to fill the pane — no scrollbar.
+    //  • off: each row keeps `cellSize` px; when that's taller than the pane the
+    //    grid grows past it and #viz scrolls vertically.
+    rowTracks.push(config.fitHeight ? 'minmax(0, 1fr)' : (nRows * config.cellSize) + 'px');
     grid.style.gridTemplateRows = rowTracks.join(' ');
+    // When not fitting, stop the grid from flex-growing/shrinking so its height
+    // equals the fixed tracks (and #viz scrolls); width still fills via the
+    // 1fr matrix column. (See the dendrogram "flex:0 0 auto" sizing lesson.)
+    grid.classList.toggle('scroll', !config.fitHeight);
 
     const place = (node, r1, r2, c1, c2) => {
       node.style.gridRow = r1 + ' / ' + r2;
@@ -982,6 +994,8 @@
       { key: 'scalePower', label: 'Emphasis (gamma)', type: 'range', min: 0.3, max: 3, step: 0.1 },
     ]},
     { section: 'Matrix cells', fields: [
+      { key: 'fitHeight', label: 'Fit to window height', type: 'checkbox' },
+      { key: 'cellSize', label: 'Row height (px) — when not fitting', type: 'range', min: 14, max: 80, step: 2 },
       { key: 'cellGap', label: 'Cell gap (px)', type: 'range', min: 0, max: 12, step: 1 },
       { key: 'cellRadius', label: 'Corner radius (px)', type: 'range', min: 0, max: 16, step: 1 },
       { key: 'showCellLabels', label: 'Show value in cells', type: 'checkbox' },

@@ -140,6 +140,10 @@ html, body {
   gap: 0; /* histogram spacing is applied per-region (margins) so the nested
              row/column header levels can sit tight against each other */
 }
+/* fitHeight OFF: don't flex-grow/shrink, so the grid is exactly the sum of its
+   fixed row tracks (cellSize px/row) and #viz scrolls when it overflows the
+   pane. Width still fills the pane via the cross-axis stretch + 1fr matrix col. */
+.hth-grid.scroll { flex: 0 0 auto; min-height: 0; }
 .hth-slot { min-width: 0; min-height: 0; }
 
 /* corner cell (top-left), holds the axis label */
