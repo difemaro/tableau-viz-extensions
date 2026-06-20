@@ -265,6 +265,16 @@ html, body {
 .hth-dimmed { opacity: 0.25; }
 .hth-selected { opacity: 1; }
 
+/* marquee (rubber-band) drag-select rectangle — Tableau-like translucent box */
+.hth-marquee {
+  position: fixed;
+  z-index: 35;
+  pointer-events: none;
+  background: rgba(94, 162, 224, 0.25);
+  border: 1px solid rgba(64, 132, 204, 0.9);
+  border-radius: 1px;
+}
+
 /* custom tooltip for histogram (aggregate) bars — Tableau-like look */
 .hth-tip {
   position: fixed;

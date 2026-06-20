@@ -629,9 +629,20 @@
   let hoverEl = null;     // element currently driving the tooltip
   let hoverAt = 0;        // last hover update timestamp (throttle)
 
+  // Marquee (rubber-band) drag-select state. A press-and-drag inside the viz
+  // draws a rectangle and selects every matrix cell it covers — like Tableau's
+  // own Sankey. A press that doesn't move past the threshold stays a click.
+  const MARQUEE_THRESHOLD = 4;   // px of movement before a press becomes a drag
+  let dragStart = null;          // { x, y } at mousedown (client coords)
+  let dragCur = null;            // { x, y } at the latest mousemove
+  let marqueeActive = false;     // true once movement passed the threshold
+  let marqueeAdditive = false;   // Ctrl/Cmd held at mousedown → add to selection
+  let suppressClick = false;     // swallow the click that follows a marquee drag
+
   function wireInteractivity() {
     host.addEventListener('mousemove', (ev) => {
       if (!config.enableTooltips) return;
+      if (marqueeActive) return;   // dragging a marquee → no hover tooltips
       const t = ev.target.closest && ev.target.closest('.hth-interactive');
       if (!t) { clearHoverState(); return; }
 
@@ -654,10 +665,112 @@
     host.addEventListener('mouseleave', clearHoverState);
     host.addEventListener('click', (ev) => {
       if (!config.enableTooltips) return;
+      if (suppressClick) { suppressClick = false; return; }  // came from a drag
       const t = ev.target.closest && ev.target.closest('.hth-interactive');
       const ids = t && t._tupleIds ? t._tupleIds : null;
       toggleSelection(ids, ev.ctrlKey || ev.metaKey);
     });
+
+    // Press-and-drag → marquee select. We track on document for move/up so the
+    // drag keeps working even when the pointer leaves the viz.
+    host.addEventListener('mousedown', (ev) => {
+      if (!config.enableTooltips || ev.button !== 0) return;
+      suppressClick = false;
+      dragStart = { x: ev.clientX, y: ev.clientY };
+      dragCur = { x: ev.clientX, y: ev.clientY };
+      marqueeAdditive = ev.ctrlKey || ev.metaKey;
+      marqueeActive = false;
+      document.addEventListener('mousemove', onMarqueeMove, true);
+      document.addEventListener('mouseup', onMarqueeUp, true);
+    });
+  }
+
+  function onMarqueeMove(ev) {
+    if (!dragStart) return;
+    dragCur = { x: ev.clientX, y: ev.clientY };
+    if (!marqueeActive) {
+      const dx = Math.abs(dragCur.x - dragStart.x);
+      const dy = Math.abs(dragCur.y - dragStart.y);
+      if (dx <= MARQUEE_THRESHOLD && dy <= MARQUEE_THRESHOLD) return;
+      marqueeActive = true;
+      clearHoverState();                  // drop any pending tooltip
+      document.body.style.userSelect = 'none';   // no text selection while dragging
+      ensureMarquee().style.display = 'block';
+    }
+    ev.preventDefault();
+    drawMarquee();
+  }
+
+  function onMarqueeUp() {
+    document.removeEventListener('mousemove', onMarqueeMove, true);
+    document.removeEventListener('mouseup', onMarqueeUp, true);
+    if (marqueeActive) {
+      applyMarquee(marqueeRect(), marqueeAdditive);
+      hideMarquee();
+      document.body.style.userSelect = '';
+      suppressClick = true;               // the trailing click must not re-clear
+      marqueeActive = false;
+    }
+    dragStart = dragCur = null;
+  }
+
+  // Normalized {left,top,right,bottom} of the drag in viewport coords.
+  function marqueeRect() {
+    return {
+      left: Math.min(dragStart.x, dragCur.x),
+      top: Math.min(dragStart.y, dragCur.y),
+      right: Math.max(dragStart.x, dragCur.x),
+      bottom: Math.max(dragStart.y, dragCur.y),
+    };
+  }
+
+  // Select every mark whose box overlaps the marquee: matrix cells plus the two
+  // histograms' bars (drag over a column/row bar to grab that whole column/row).
+  // We hit-test the *visible bar* (`.hth-bar-v` / `.hth-bar-h`), not its
+  // full-height/width track container, so a short bar isn't selected just
+  // because the marquee crossed its empty track. Labels are deliberately left
+  // out — you select the region you drew, not headings the rectangle clipped.
+  const MARQUEE_TARGETS = [
+    { hit: '.hth-cell.hth-interactive', mark: '.hth-cell.hth-interactive' },
+    { hit: '.hth-tophist-col .hth-bar-v', mark: '.hth-tophist-col' },
+    { hit: '.hth-righthist-row .hth-bar-h', mark: '.hth-righthist-row' },
+  ];
+  function applyMarquee(rect, additive) {
+    const hits = new Set();
+    MARQUEE_TARGETS.forEach((g) => {
+      host.querySelectorAll(g.hit).forEach((node) => {
+        const r = node.getBoundingClientRect();
+        const overlaps = !(r.right < rect.left || r.left > rect.right ||
+                           r.bottom < rect.top || r.top > rect.bottom);
+        if (!overlaps) return;
+        const mark = node.closest(g.mark);
+        if (mark && mark._tupleIds) mark._tupleIds.forEach((id) => hits.add(id));
+      });
+    });
+    if (!additive) selectedTuples = new Set();
+    hits.forEach((id) => selectedTuples.add(id));
+    pushSelection();   // sends the full set to Tableau + re-applies dim styles
+  }
+
+  let marqueeEl = null;
+  function ensureMarquee() {
+    if (!marqueeEl) {
+      marqueeEl = el('div', 'hth-marquee');
+      marqueeEl.style.display = 'none';
+      document.body.appendChild(marqueeEl);
+    }
+    return marqueeEl;
+  }
+  function drawMarquee() {
+    const r = marqueeRect();
+    const m = ensureMarquee();
+    m.style.left = r.left + 'px';
+    m.style.top = r.top + 'px';
+    m.style.width = (r.right - r.left) + 'px';
+    m.style.height = (r.bottom - r.top) + 'px';
+  }
+  function hideMarquee() {
+    if (marqueeEl) marqueeEl.style.display = 'none';
   }
 
   // Update the local selection on click, mirroring native Tableau behaviour:
