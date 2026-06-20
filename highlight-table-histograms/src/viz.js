@@ -18,9 +18,12 @@
 
 (function () {
   const host = document.getElementById('viz');
-  // Key for the local-cache copy of the config (workbook settings are the
-  // source of truth and are isolated per extension instance). If you run other
-  // extensions from this same localhost origin, give each a distinct key.
+  // Key for the config blob stored in the workbook (tableau.extensions.settings).
+  // Keep this STABLE so a workbook saved by an earlier build still loads its
+  // config. Workbook settings are the single source of truth — there is no
+  // localStorage cache (it leaks the last-used config across instances on one
+  // origin, which would break "fresh viz = defaults"; we never paint before
+  // init resolves, so a cache buys us nothing).
   const STORAGE_KEY = 'hth-config-v1';
 
   /* ---------- config ---------- */
@@ -82,10 +85,11 @@
     mono: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
   };
 
-  // Start from defaults + the same-machine cache so the very first paint has
-  // something sensible; the authoritative workbook settings are loaded once
-  // initializeAsync() resolves (the settings API isn't ready before that).
-  let config = { ...DEFAULT_CONFIG, ...loadLocalCache() };
+  // Start from defaults; the authoritative workbook settings are loaded once
+  // initializeAsync() resolves (the settings API isn't ready before that, and
+  // render() runs only after that point — so there is no pre-init paint to
+  // cache for).
+  let config = { ...DEFAULT_CONFIG };
   let lastModel = null;
 
   // 1 — CONNECT ------------------------------------------------
@@ -1043,7 +1047,7 @@
     });
     resetBtn.addEventListener('click', () => {
       config = { ...DEFAULT_CONFIG };
-      saveConfig(config);
+      saveConfig();
       buildModalBody();
       if (lastModel) render(lastModel);
     });
@@ -1115,16 +1119,15 @@
 
   function commit(key, value) {
     config[key] = value;
-    saveConfig(config);
+    saveConfig();
     if (lastModel) render(lastModel);
   }
 
-  /* ---------- config persistence (workbook settings + localStorage) ----------
-     Two stores:
-       • tableau.extensions.settings — saved INTO the workbook. Survives
-         save/close/reopen and travels with the .twb/.twbx. This is the one
-         that matters; it requires initializeAsync() to have resolved first.
-       • localStorage — a same-machine cache for instant first paint only.
+  /* ---------- config persistence (workbook settings) ----------
+     tableau.extensions.settings is saved INTO the workbook: it survives
+     save/close/reopen and travels with the .twb/.twbx. It is the single
+     source of truth (no localStorage cache — see STORAGE_KEY note), and
+     requires initializeAsync() to have resolved first.
      saveAsync() must be serialized: Tableau allows only one save in flight,
      and a second call while one is pending rejects. We also debounce so a
      slider drag doesn't fire dozens of saves. ---------------------------- */
@@ -1137,29 +1140,17 @@
     } catch (e) {
       console.error('reading workbook settings failed:', e);
     }
-    if (!Object.keys(saved).length) saved = loadLocalCache();
+    // Empty workbook settings ⇒ a fresh viz ⇒ start from DEFAULT_CONFIG.
     return { ...DEFAULT_CONFIG, ...saved };
-  }
-
-  function loadLocalCache() {
-    try {
-      const ls = window.localStorage.getItem(STORAGE_KEY);
-      if (ls) return JSON.parse(ls);
-    } catch (e) { /* ignore */ }
-    return {};
   }
 
   let saveTimer = null;   // debounce handle
   let saveInFlight = false;
   let savePending = false;
 
-  function saveConfig(cfg) {
-    // Same-machine cache: write immediately so a quick reload restores state
-    // even before the (debounced) workbook save lands.
-    try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg)); } catch (e) { /* ignore */ }
-
-    // Workbook settings: debounce, then persist. The actual values are read
-    // from the live `config` at flush time, so we always store the latest.
+  function saveConfig() {
+    // Debounce, then persist to the workbook. The actual values are read from
+    // the live `config` at flush time, so we always store the latest.
     clearTimeout(saveTimer);
     saveTimer = setTimeout(flushWorkbookSettings, 350);
   }
