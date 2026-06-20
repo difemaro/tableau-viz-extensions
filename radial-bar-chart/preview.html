@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Preview — Radial Bar Chart (no Tableau needed)</title>
+  <link rel="stylesheet" href="./src/style.css" />
+</head>
+<body>
+  <div id="viz"></div>
+  <button id="cfg-open" title="Configure" aria-label="Configure">&#9881;</button>
+  <div id="cfg-overlay" hidden>
+    <div id="cfg-modal" role="dialog" aria-modal="true" aria-label="Chart settings">
+      <header id="cfg-head">
+        <span id="cfg-title">Settings</span>
+        <div class="cfg-head-actions">
+          <button id="cfg-reset" type="button">Reset</button>
+          <button id="cfg-done" type="button">Done</button>
+        </div>
+      </header>
+      <div id="cfg-body"></div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       MOCK of the Tableau Extensions API for local preview only.
+       Feeds sample Category x Sales data so you can iterate on the
+       chart + config modal without opening Tableau.
+       (index.html is what Tableau actually loads — not this file.)
+       ============================================================ -->
+  <script>
+    (function () {
+      const CATS = ['Phones', 'Chairs', 'Storage', 'Tables', 'Binders',
+                    'Copiers', 'Machines', 'Accessories', 'Bookcases', 'Art'];
+      const columns = [
+        { fieldName: 'Sub-Category', dataType: 'string' },
+        { fieldName: 'SUM(Sales)', dataType: 'float' },
+      ];
+      const data = CATS.map((c, i) => {
+        const v = Math.round(20000 + 95000 * Math.abs(Math.sin((i + 1) * 1.3)));
+        return [
+          { value: c, formattedValue: c },
+          { value: v, formattedValue: String(v) },
+        ];
+      });
+
+      const settingsStore = {};
+      window.tableau = {
+        TableauEventType: {
+          SummaryDataChanged: 'summary-data-changed',
+          MarkSelectionChanged: 'mark-selection-changed',
+        },
+        SelectOptions: { Simple: 'select-options-simple', Toggle: 'select-options-toggle' },
+        extensions: {
+          initializeAsync: () => Promise.resolve(),
+          settings: {
+            get: (k) => settingsStore[k],
+            set: (k, v) => { settingsStore[k] = v; },
+            saveAsync: () => Promise.resolve(),
+          },
+          worksheetContent: {
+            worksheet: {
+              name: 'Sales by Sub-Category (preview)',
+              addEventListener: () => {},
+              hoverTupleAsync: (id, tip) => { console.log('hoverTupleAsync', id, tip); return Promise.resolve(); },
+              selectTuplesAsync: (ids, opt) => { console.log('selectTuplesAsync', ids, opt); return Promise.resolve(); },
+              getSelectedMarksAsync: () => Promise.resolve({ data: [] }),
+              getVisualSpecificationAsync: () => Promise.resolve({
+                activeMarksSpecificationIndex: 0,
+                marksSpecifications: [{
+                  encodings: [
+                    { id: 'category', field: { name: 'Sub-Category' } },
+                    { id: 'value', field: { name: 'Sales' } },
+                  ],
+                }],
+              }),
+              getSummaryDataReaderAsync: () => Promise.resolve({
+                pageCount: 1,
+                getPageAsync: () => Promise.resolve({ columns, data }),
+                releaseAsync: () => Promise.resolve(),
+              }),
+            },
+          },
+        },
+      };
+    })();
+  </script>
+  <script src="./src/viz.js"></script>
+</body>
+</html>
