@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Preview — Stream Graph (no Tableau needed)</title>
+  <link rel="stylesheet" href="./src/style.css" />
+</head>
+<body class="tableau-worksheet">
+  <div id="viz"></div>
+  <button id="cfg-open" title="Configure" aria-label="Configure">&#9881;</button>
+  <div id="cfg-overlay" hidden>
+    <div id="cfg-modal" role="dialog" aria-modal="true" aria-label="Chart settings">
+      <header id="cfg-head">
+        <span id="cfg-title">Settings</span>
+        <div class="cfg-head-actions">
+          <button id="cfg-reset" type="button">Reset</button>
+          <button id="cfg-done" type="button">Done</button>
+        </div>
+      </header>
+      <div id="cfg-body"></div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       MOCK of the Tableau Extensions API for local preview only.
+       Feeds sample Fruit x Month production data (one row per
+       month×fruit) so you can iterate on the chart + config modal
+       without opening Tableau. index.html is what Tableau loads.
+       ============================================================ -->
+  <script>
+    (function () {
+      const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      // each fruit: [peakMonthIndex, spread, peakAmount, baseline]
+      const FRUITS = [
+        ['Apple',   8, 1.6, 60, 8],    // peaks Sep
+        ['Banana',  3, 4.5, 50, 18],   // broad spring/steady
+        ['Orange',  1, 1.8, 70, 6],    // winter peak
+        ['Grape',   8, 1.3, 95, 4],    // tall autumn spike
+        ['Pear',    5, 2.5, 35, 6],    // early-summer
+        ['Cherry',  6, 1.4, 40, 3],    // midsummer
+      ];
+      const gauss = (i, mu, sigma) => Math.exp(-((i - mu) ** 2) / (2 * sigma * sigma));
+
+      const columns = [
+        { fieldName: 'Month', dataType: 'string' },
+        { fieldName: 'Fruit', dataType: 'string' },
+        { fieldName: 'SUM(Production)', dataType: 'float' },
+      ];
+      const data = [];
+      MONTHS.forEach((mon, mi) => {
+        FRUITS.forEach(([name, peak, spread, amp, base]) => {
+          const v = Math.round(base + amp * gauss(mi, peak, spread));
+          data.push([
+            { value: mon, formattedValue: mon },
+            { value: name, formattedValue: name },
+            { value: v, formattedValue: String(v) },
+          ]);
+        });
+      });
+
+      let selected = [];
+      const settingsStore = {};
+      window.tableau = {
+        TableauEventType: { SummaryDataChanged: 'summary-data-changed', MarkSelectionChanged: 'mark-selection-changed' },
+        SelectOptions: { Simple: 'select-options-simple', Toggle: 'select-options-toggle' },
+        extensions: {
+          initializeAsync: () => Promise.resolve(),
+          settings: {
+            get: (k) => settingsStore[k],
+            set: (k, v) => { settingsStore[k] = v; },
+            saveAsync: () => Promise.resolve(),
+          },
+          worksheetContent: {
+            worksheet: {
+              name: 'Fruit production 2024 (preview)',
+              addEventListener: () => {},
+              hoverTupleAsync: (id, tip) => { console.log('hoverTupleAsync', id, tip); return Promise.resolve(); },
+              selectTuplesAsync: (ids, opt) => { selected = ids.slice(); console.log('selectTuplesAsync', ids, opt); return Promise.resolve(); },
+              getSelectedMarksAsync: () => Promise.resolve({ data: [] }),
+              getVisualSpecificationAsync: () => Promise.resolve({
+                activeMarksSpecificationIndex: 0,
+                marksSpecifications: [{
+                  encodings: [
+                    { id: 'axis', field: { name: 'Month' } },
+                    { id: 'series', field: { name: 'Fruit' } },
+                    { id: 'value', field: { name: 'Production' } },
+                  ],
+                }],
+              }),
+              getSummaryDataReaderAsync: () => Promise.resolve({
+                pageCount: 1,
+                getPageAsync: () => Promise.resolve({ columns, data }),
+                releaseAsync: () => Promise.resolve(),
+              }),
+            },
+          },
+        },
+      };
+    })();
+  </script>
+  <script src="./src/viz.js"></script>
+</body>
+</html>
