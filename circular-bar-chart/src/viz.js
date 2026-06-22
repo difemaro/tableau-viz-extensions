@@ -57,6 +57,14 @@
     lowColor: '#dbe6f3',      // sequential scale endpoints (also drives "by value")
     highColor: '#1f4e79',
     reverseScale: false,
+    // Per-category color overrides { categoryKey: '#hex' } — double-click a ring
+    // /legend row, or use the modal's "Series colors" section. Always win.
+    seriesColors: {},
+    // First-seen order of category keys (append-only, persisted). PALETTE colors
+    // are assigned by a category's position HERE, not its index in the current
+    // (sorted/filtered) rings — so a category keeps its color across re-sort and
+    // filtering (see CLAUDE.md "Color categorical marks by series IDENTITY").
+    seriesOrder: [],
 
     // geometry
     startAngleDeg: 0,         // 0 = top; arcs grow clockwise
@@ -120,9 +128,14 @@
         });
       }
 
-      if (window.ResizeObserver) {
-        new ResizeObserver(() => lastModel && render(lastModel)).observe(host);
-      }
+      // Re-render on size changes. We listen THREE ways and coalesce through
+      // rAF: ResizeObserver (pane/object resizes), window 'resize' (belt-and-
+      // braces), and a polling backstop (Tableau often sizes the iframe to its
+      // final dimensions AFTER first paint, and in some hosts neither RO nor
+      // 'resize' fires for that — leaving the chart stuck at its initial size).
+      if (window.ResizeObserver) new ResizeObserver(scheduleRender).observe(host);
+      window.addEventListener('resize', scheduleRender);
+      startSizeWatch();
 
       wireModal();
       wireInteractivity();
@@ -207,6 +220,27 @@
     return { worksheet, catFields, valueField, items, min, max, tupleKeys };
   }
 
+  // Coalesce resize-driven re-renders into a single rAF so a burst of resize
+  // events (drag-resizing a pane) produces one redraw per frame.
+  let renderRAF = 0;
+  function scheduleRender() {
+    if (!lastModel || renderRAF) return;
+    renderRAF = requestAnimationFrame(() => { renderRAF = 0; render(lastModel); });
+  }
+  // Poll the host size as a backstop for resize events that don't fire. Renders
+  // directly (not via the rAF-coalesced scheduleRender) so it works even where
+  // rAF is starved; the 250ms interval is its own throttle.
+  let watchedW = 0, watchedH = 0;
+  function startSizeWatch() {
+    setInterval(() => {
+      const w = host.clientWidth + 0.001 * (window.innerWidth || 0);
+      const h = host.clientHeight;
+      if (w === watchedW && h === watchedH) return;
+      watchedW = w; watchedH = h;
+      if (lastModel) render(lastModel);
+    }, 250);
+  }
+
   // Items in ring order (outer first). Nulls sink to the end either way.
   function sortedItems(model) {
     const arr = model.items.slice();
@@ -230,6 +264,8 @@
       showMessage('No data to display yet.');
       return;
     }
+    // lock in stable palette slots per category identity (palette mode only)
+    if (config.colorMode === 'palette') ensureSeriesOrder(model);
 
     const wrap = el('div', 'cb');
     if (config.title) wrap.appendChild(el('div', 'cb-title', config.title));
@@ -271,7 +307,7 @@
       const r = outerR - slot * i - slot / 2;     // i = 0 is the outermost ring
       const frac = model.max > 0 && it.value != null ? clamp(it.value / model.max, 0, 1) : 0;
       const a1 = start + frac * maxSweep;
-      const color = colorFor(i, n, it.value, model);
+      const color = colorFor(it, model);
 
       const g = svgEl('g', { class: 'cb-ring' });
 
@@ -338,10 +374,12 @@
         g.appendChild(txt);
       }
 
-      // Tag as an interactive mark (hover tooltip + click/marquee selection).
+      // Tag as an interactive mark (hover tooltip + click/marquee/dbl-click).
       if (config.enableTooltips && it.tupleIds.length) {
         g.classList.add('cb-interactive');
         g._tupleIds = it.tupleIds;
+        g._key = it.key;          // identity for the per-series color override
+        g._curColor = color;      // seed value for the color picker
         g._tip = { fields: model.catFields, parts: it.parts, valueField: model.valueField, value: it.value };
       }
 
@@ -398,6 +436,8 @@
       if (config.enableTooltips && it.tupleIds.length) {
         row.classList.add('cb-interactive');
         row._tupleIds = it.tupleIds;
+        row._key = it.key;                 // identity for the color override
+        row._curColor = colorFor(it, model);
         row._tip = { fields: model.catFields, parts: it.parts, valueField: model.valueField, value: it.value };
       }
       leg.appendChild(row);
@@ -434,11 +474,43 @@
     return `M ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2}`;
   }
 
-  /* ---------- color + number helpers ---------- */
-  function colorFor(i, n, value, model) {
+  /* ---------- color + number helpers ----------
+     A category's color is resolved by IDENTITY, not by ring position:
+       1. an explicit per-category override (config.seriesColors[key]) wins;
+       2. else by colorMode — single / sequential(by value) / palette;
+       3. palette is indexed by the category's slot in the persisted first-seen
+          order, so re-sorting or filtering never moves a category's hue. */
+  function ensureSeriesOrder(model) {
+    const order = config.seriesOrder || (config.seriesOrder = []);
+    let changed = false;
+    model.items.forEach((it) => { if (order.indexOf(it.key) < 0) { order.push(it.key); changed = true; } });
+    if (changed) saveConfig();
+  }
+  function stableIndex(key) {
+    const order = config.seriesOrder || [];
+    const i = order.indexOf(key);
+    return i < 0 ? 0 : i;
+  }
+  function colorFor(it, model) {
+    // Per-category overrides + identity-stable palette slots apply ONLY in the
+    // categorical palette mode. In sequential mode color encodes the value (a
+    // continuous scale — an override would punch a hole in the gradient); in
+    // single mode every bar is one color. Both ignore seriesColors/seriesOrder.
     if (config.colorMode === 'single') return config.barColor;
-    if (config.colorMode === 'sequential') return scaleColor(norm(value, model.min, model.max));
-    return PALETTE[i % PALETTE.length];
+    if (config.colorMode === 'sequential') return scaleColor(norm(it.value, model.min, model.max));
+    const ov = config.seriesColors && config.seriesColors[it.key];
+    if (ov) return ov;                                  // explicit override wins
+    return PALETTE[stableIndex(it.key) % PALETTE.length];
+  }
+  // Coerce any color we produce (hex or "rgb(r, g, b)") to "#rrggbb" for an
+  // <input type=color>.
+  function anyToHex(c) {
+    if (!c) return '#888888';
+    const s = String(c);
+    if (s[0] === '#') return s.length === 4 ? '#' + s.slice(1).split('').map((x) => x + x).join('') : s;
+    const m = s.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+    if (m) return '#' + [1, 2, 3].map((i) => (+m[i]).toString(16).padStart(2, '0')).join('');
+    return '#888888';
   }
   function norm(v, min, max) {
     if (v == null || max <= min) return 0;
@@ -507,6 +579,7 @@
   let selectedTuples = new Set();   // drives worksheet selection + our dimming
   let hoverEl = null;
   let hoverAt = 0;
+  let clickTimer = null;            // single/double-click disambiguation
 
   const MARQUEE_THRESHOLD = 4;
   let dragStart = null, dragCur = null;
@@ -530,6 +603,24 @@
       try { ws.selectTuplesAsync([...selectedTuples], SELECT_SIMPLE).catch(() => {}); } catch (e) { /* ignore */ }
     }
     applySelectionStyles();
+  }
+
+  // Open the OS color picker for a category, store the chosen color as a
+  // persisted override, and re-render. (A hidden <input type=color> is the
+  // simplest cross-host picker.)
+  function pickSeriesColor(key, currentColor) {
+    const inp = document.createElement('input');
+    inp.type = 'color';
+    inp.value = anyToHex(currentColor);
+    inp.style.cssText = 'position:fixed;left:-9999px;top:0';
+    document.body.appendChild(inp);
+    inp.addEventListener('input', () => {
+      config.seriesColors[key] = inp.value;
+      saveConfig();
+      if (lastModel) render(lastModel);
+    });
+    inp.addEventListener('change', () => { inp.remove(); });
+    inp.click();
   }
 
   function wireInteractivity() {
@@ -559,7 +650,26 @@
       if (!config.enableTooltips) return;
       if (suppressClick) { suppressClick = false; return; }
       const t = ev.target.closest && ev.target.closest('.cb-interactive');
-      toggleSelection(t && t._tupleIds ? t._tupleIds : null, ev.ctrlKey || ev.metaKey);
+      if (t) {
+        // Delay the select so a double-click (color pick) can cancel it and
+        // doesn't also toggle the selection.
+        if (clickTimer) return;
+        const ids = t._tupleIds, additive = ev.ctrlKey || ev.metaKey;
+        clickTimer = setTimeout(() => { clickTimer = null; toggleSelection(ids, additive); }, 220);
+      } else {
+        toggleSelection(null, ev.ctrlKey || ev.metaKey);   // empty space → clear now
+      }
+    });
+    // Double-click a ring / legend row → pick a persisted color for that
+    // category. Only meaningful in palette mode (sequential/single ignore
+    // per-category overrides) — otherwise let the normal click-select stand.
+    host.addEventListener('dblclick', (ev) => {
+      if (!config.enableTooltips || config.colorMode !== 'palette') return;
+      const t = ev.target.closest && ev.target.closest('.cb-interactive');
+      if (!t || !t._key) return;
+      if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
+      ev.preventDefault();
+      pickSeriesColor(t._key, t._curColor);
     });
 
     host.addEventListener('mousedown', (ev) => {
@@ -846,7 +956,9 @@
 
   function openConfigModal() {
     const overlay = document.getElementById('cfg-overlay');
-    if (overlay) overlay.hidden = false;
+    if (!overlay) return;
+    buildModalBody();          // rebuild so the dynamic "Series colors" list
+    overlay.hidden = false;    // reflects whatever categories are in the view
   }
 
   function wireModal() {
@@ -865,7 +977,8 @@
     overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !overlay.hidden) close(); });
     resetBtn.addEventListener('click', () => {
-      config = { ...DEFAULT_CONFIG };
+      // fresh copies of the mutable collections (don't alias DEFAULT_CONFIG).
+      config = { ...DEFAULT_CONFIG, seriesColors: {}, seriesOrder: [] };
       saveConfig();
       buildModalBody();
       if (lastModel) render(lastModel);
@@ -881,6 +994,47 @@
       sec.fields.forEach((f) => wrap.appendChild(buildField(f)));
       body.appendChild(wrap);
     });
+    const colorsSec = buildSeriesColorsSection();
+    if (colorsSec) body.appendChild(colorsSec);
+  }
+  // Dynamic section: one color swatch per category currently in the view, plus a
+  // ↺ reset-to-palette. Built from lastModel (the schema is static; categories
+  // are data-driven), so it only appears once fields are dropped.
+  function buildSeriesColorsSection() {
+    // Per-category overrides only apply in the categorical palette mode, so the
+    // section would do nothing in sequential/single — hide it there.
+    if (config.colorMode !== 'palette') return null;
+    if (!lastModel || !lastModel.items.length) return null;
+    const wrap = el('div', 'cfg-section');
+    wrap.appendChild(el('h3', 'cfg-section-title', 'Series colors'));
+    lastModel.items.forEach((it) => {
+      const row = el('label', 'cfg-field');
+      row.appendChild(el('span', 'cfg-label', it.label));
+      const box = el('span', 'cfg-color-box');
+      const inp = document.createElement('input');
+      inp.type = 'color';
+      inp.value = anyToHex(colorFor(it, lastModel));
+      inp.addEventListener('input', () => {
+        config.seriesColors[it.key] = inp.value;
+        saveConfig();
+        if (lastModel) render(lastModel);
+      });
+      const reset = el('button', 'cfg-mini', '↺');
+      reset.type = 'button';
+      reset.title = 'Reset to palette / scale';
+      reset.addEventListener('click', (e) => {
+        e.preventDefault();
+        delete config.seriesColors[it.key];
+        saveConfig();
+        inp.value = anyToHex(colorFor(it, lastModel));
+        if (lastModel) render(lastModel);
+      });
+      box.appendChild(inp);
+      box.appendChild(reset);
+      row.appendChild(box);
+      wrap.appendChild(row);
+    });
+    return wrap;
   }
 
   function buildField(f) {
@@ -954,7 +1108,12 @@
     } catch (e) {
       console.error('reading workbook settings failed:', e);
     }
-    return { ...DEFAULT_CONFIG, ...saved };
+    const cfg = { ...DEFAULT_CONFIG, ...saved };
+    // Deep-copy the mutable collections so we never mutate DEFAULT_CONFIG's
+    // shared objects (which would leak across instances and break Reset).
+    cfg.seriesColors = { ...(saved.seriesColors || {}) };
+    cfg.seriesOrder = [...(saved.seriesOrder || [])];
+    return cfg;
   }
 
   let saveTimer = null;

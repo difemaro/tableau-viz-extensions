@@ -62,6 +62,13 @@
     divHighColor: '#3b6ea5', // high-value color (blue)
     palette: 'pastel',       // pastel | tableau10 | bold | mono  (colorMode = palette)
     monoBaseColor: '#5a8fc7',
+    // Per-category color overrides { categoryKey: '#hex' } and the first-seen
+    // category order — used ONLY by the categorical palette mode (pastel/
+    // tableau10/bold) so a category keeps its color across re-sort + filter, and
+    // the user can pin colors. divergent/single/mono ignore both. (See CLAUDE.md
+    // "Color categorical marks by series IDENTITY".)
+    seriesColors: {},
+    seriesOrder: [],
 
     // labels (right column)
     showCategoryNames: true,
@@ -244,6 +251,8 @@
     const items = sortedItems(model);
     const n = items.length;
     if (!n) { showMessage('No data to display yet.'); return; }
+    // lock in stable palette slots per category identity (categorical palette only)
+    if (isCategoricalPalette()) ensureSeriesOrder(model);
 
     const wrap = el('div', 'db');
     let titleEl = null;
@@ -320,10 +329,12 @@
     items.forEach((it, i) => {
       const y = plotTop + band * (i + 0.5);
       const barH = Math.max(2, Math.min(band - 2, band * config.barThickness));
-      const color = colorFor(i, n, it.value, loVal, hiVal);
+      const color = colorFor(it, i, n, loVal, hiVal);
 
       const g = svgEl('g', { class: 'db-row db-interactive' });
       g._tupleIds = [it.tupleId];
+      g._key = it.rawKey;      // identity for the per-category color override
+      g._curColor = color;     // seed for the color picker
       g._tip = { name: it.label, field: model.catField, valueField: model.valField, value: it.value };
 
       // fan curve from the root to the bar's left end
@@ -349,16 +360,16 @@
         const tx = W - pad.right;
         const text = svgEl('text', { class: 'db-label', x: tx, y, 'text-anchor': 'end',
           'dominant-baseline': 'middle', 'font-size': config.labelSize });
-        // Text colors mirror the root node: the value (number) is the prominent
-        // text (textColor) — same as the total value — and the category name is
-        // the muted text — same as the total's caption.
+        // Emphasis: the category NAME is bold + prominent (textColor); the value
+        // is lighter and regular weight (mutedColor) — matching the circular bar
+        // chart's "bold name, plain value" label style.
         if (config.showCategoryNames) {
-          const nameT = svgEl('tspan', { fill: config.mutedColor });
+          const nameT = svgEl('tspan', { fill: config.textColor, 'font-weight': 700 });
           nameT.textContent = it.label;
           text.appendChild(nameT);
         }
         if (config.showValueLabels && it.value != null) {
-          const valT = svgEl('tspan', { fill: config.textColor, dx: config.showCategoryNames ? 8 : 0 });
+          const valT = svgEl('tspan', { fill: config.mutedColor, dx: config.showCategoryNames ? 8 : 0 });
           valT.textContent = formatNumber(it.value);
           text.appendChild(valT);
         }
@@ -399,20 +410,54 @@
        • single    — one fixed color for every bar
        • divergent — interpolate low→high color by the bar's value
        • palette   — categorical (pastel/tableau10/bold), or a single-hue ramp
-                     for 'mono'. This is the original behaviour.
-     `value`, `loVal`, `hiVal` are only needed for the divergent mode. */
-  function colorFor(i, n, value, loVal, hiVal) {
+                     for 'mono'.
+     In the categorical palette mode (NOT mono) the color is resolved by category
+     IDENTITY, not the bar's sorted position: an explicit override
+     (config.seriesColors[key]) wins, else PALETTE indexed by the category's slot
+     in the persisted first-seen order — so re-sorting or filtering never moves a
+     category's hue. divergent (by value), single (fixed), and mono (a deliberate
+     rank ramp) stay positional/value-driven and ignore seriesColors/seriesOrder.
+     `i` is the bar's sorted index (used only by mono). */
+  function isCategoricalPalette() {
+    return config.colorMode === 'palette' && config.palette !== 'mono';
+  }
+  function ensureSeriesOrder(model) {
+    const order = config.seriesOrder || (config.seriesOrder = []);
+    let changed = false;
+    model.items.forEach((it) => { if (order.indexOf(it.rawKey) < 0) { order.push(it.rawKey); changed = true; } });
+    if (changed) saveConfig();
+  }
+  function stableIndex(key) {
+    const order = config.seriesOrder || [];
+    const k = order.indexOf(key);
+    return k < 0 ? 0 : k;
+  }
+  function colorFor(it, i, n, loVal, hiVal) {
     if (config.colorMode === 'single') return config.singleColor;
     if (config.colorMode === 'divergent') {
+      const value = it.value;
       const t = (value == null || hiVal <= loVal) ? 0.5 : (value - loVal) / (hiVal - loVal);
       return mix(config.divLowColor, config.divHighColor, Math.max(0, Math.min(1, t)));
     }
+    // palette mode: an explicit per-category override always wins.
+    const ov = config.seriesColors && config.seriesColors[it.rawKey];
+    if (ov) return ov;
     if (config.palette === 'mono') {
-      const t = n <= 1 ? 0 : (i / (n - 1)) * 0.7;   // base → lighter
+      const t = n <= 1 ? 0 : (i / (n - 1)) * 0.7;   // base → lighter (rank ramp)
       return mix(config.monoBaseColor, '#ffffff', t);
     }
     const pal = PALETTES[config.palette] || PALETTES.pastel;
-    return pal[i % pal.length];
+    return pal[stableIndex(it.rawKey) % pal.length];
+  }
+  // Coerce any color we produce (hex or "rgb(r, g, b)") to "#rrggbb" for an
+  // <input type=color>.
+  function anyToHex(c) {
+    if (!c) return '#888888';
+    const s = String(c);
+    if (s[0] === '#') return s.length === 4 ? '#' + s.slice(1).split('').map((x) => x + x).join('') : s;
+    const m = s.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+    if (m) return '#' + [1, 2, 3].map((k) => (+m[k]).toString(16).padStart(2, '0')).join('');
+    return '#888888';
   }
   function mix(hexA, hexB, t) {
     const a = hexToRgb(hexA), b = hexToRgb(hexB);
@@ -463,6 +508,7 @@
 
   let selectedTuples = new Set();
   let hoverEl = null, hoverAt = 0;
+  let clickTimer = null;   // single/double-click disambiguation (palette mode)
 
   // Marquee (rubber-band) drag-select state. A press-and-drag in the viz draws a
   // rectangle and selects every bar it covers; a press that doesn't move past
@@ -488,7 +534,25 @@
       if (!config.enableTooltips) return;
       if (suppressClick) { suppressClick = false; return; }  // came from a drag
       const t = ev.target.closest && ev.target.closest('.db-interactive');
-      toggleSelection(t && t._tupleIds ? t._tupleIds : null, ev.ctrlKey || ev.metaKey);
+      // In palette mode, delay the select so a double-click (color pick) can
+      // cancel it; other modes select instantly (no dbl-click action there).
+      if (t && config.colorMode === 'palette') {
+        if (clickTimer) return;
+        const ids = t._tupleIds, additive = ev.ctrlKey || ev.metaKey;
+        clickTimer = setTimeout(() => { clickTimer = null; toggleSelection(ids, additive); }, 220);
+      } else {
+        toggleSelection(t && t._tupleIds ? t._tupleIds : null, ev.ctrlKey || ev.metaKey);
+      }
+    });
+    // Double-click a bar → pick a persisted color for that category. Palette mode
+    // only (divergent/single/mono ignore per-category overrides).
+    host.addEventListener('dblclick', (ev) => {
+      if (!config.enableTooltips || config.colorMode !== 'palette') return;
+      const t = ev.target.closest && ev.target.closest('.db-interactive');
+      if (!t || !t._key) return;
+      if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
+      ev.preventDefault();
+      pickSeriesColor(t._key, t._curColor);
     });
 
     // Press-and-drag → marquee select. Track move/up on document so the drag
@@ -593,6 +657,24 @@
       catch (e) { /* ignore */ }
     }
     applySelectionStyles();
+  }
+
+  // Open the OS color picker for a category, store the chosen color as a
+  // persisted override, and re-render. (A hidden <input type=color> is the
+  // simplest cross-host picker.)
+  function pickSeriesColor(key, currentColor) {
+    const inp = document.createElement('input');
+    inp.type = 'color';
+    inp.value = anyToHex(currentColor);
+    inp.style.cssText = 'position:fixed;left:-9999px;top:0';
+    document.body.appendChild(inp);
+    inp.addEventListener('input', () => {
+      config.seriesColors[key] = inp.value;
+      saveConfig();
+      if (lastModel) render(lastModel);
+    });
+    inp.addEventListener('change', () => { inp.remove(); });
+    inp.click();
   }
 
   function toggleSelection(ids, additive) {
@@ -763,7 +845,9 @@
 
   function openConfigModal() {
     const overlay = document.getElementById('cfg-overlay');
-    if (overlay) overlay.hidden = false;
+    if (!overlay) return;
+    buildModalBody();          // rebuild so the dynamic "Series colors" list
+    overlay.hidden = false;    // reflects the current categories + color mode
   }
   function wireModal() {
     const overlay = document.getElementById('cfg-overlay');
@@ -777,7 +861,8 @@
     overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !overlay.hidden) close(); });
     resetBtn.addEventListener('click', () => {
-      config = { ...DEFAULT_CONFIG };
+      // fresh copies of the mutable collections (don't alias DEFAULT_CONFIG).
+      config = { ...DEFAULT_CONFIG, seriesColors: {}, seriesOrder: [] };
       saveConfig();
       buildModalBody();
       if (lastModel) render(lastModel);
@@ -792,6 +877,51 @@
       sec.fields.forEach((f) => wrap.appendChild(buildField(f)));
       body.appendChild(wrap);
     });
+    const colorsSec = buildSeriesColorsSection();
+    if (colorsSec) body.appendChild(colorsSec);
+  }
+  // Dynamic section: one color swatch per category currently in the view, plus a
+  // ↺ reset-to-palette. Shown ONLY in the categorical palette mode (overrides do
+  // nothing in divergent/single/mono). Built from lastModel since categories are
+  // data-driven (the schema is static).
+  function buildSeriesColorsSection() {
+    if (config.colorMode !== 'palette') return null;
+    if (!lastModel || !lastModel.items.length) return null;
+    const items = sortedItems(lastModel);
+    const n = items.length;
+    const vals = items.map((it) => it.value).filter((v) => v != null);
+    const loVal = vals.length ? Math.min(...vals) : 0;
+    const hiVal = vals.length ? Math.max(...vals) : 1;
+    const wrap = el('div', 'cfg-section');
+    wrap.appendChild(el('h3', 'cfg-section-title', 'Series colors'));
+    items.forEach((it, i) => {
+      const row = el('label', 'cfg-field');
+      row.appendChild(el('span', 'cfg-label', it.label));
+      const box = el('span', 'cfg-color-box');
+      const inp = document.createElement('input');
+      inp.type = 'color';
+      inp.value = anyToHex(colorFor(it, i, n, loVal, hiVal));
+      inp.addEventListener('input', () => {
+        config.seriesColors[it.rawKey] = inp.value;
+        saveConfig();
+        if (lastModel) render(lastModel);
+      });
+      const reset = el('button', 'cfg-mini', '↺');
+      reset.type = 'button';
+      reset.title = 'Reset to palette';
+      reset.addEventListener('click', (e) => {
+        e.preventDefault();
+        delete config.seriesColors[it.rawKey];
+        saveConfig();
+        inp.value = anyToHex(colorFor(it, i, n, loVal, hiVal));
+        if (lastModel) render(lastModel);
+      });
+      box.appendChild(inp);
+      box.appendChild(reset);
+      row.appendChild(box);
+      wrap.appendChild(row);
+    });
+    return wrap;
   }
   function buildField(f) {
     const row = el('label', 'cfg-field');
@@ -863,7 +993,12 @@
       const raw = store && store.get(STORAGE_KEY);
       if (raw) saved = JSON.parse(raw);
     } catch (e) { console.error('reading workbook settings failed:', e); }
-    return { ...DEFAULT_CONFIG, ...saved };
+    const cfg = { ...DEFAULT_CONFIG, ...saved };
+    // Deep-copy the mutable collections so we never mutate DEFAULT_CONFIG's
+    // shared objects (which would leak across instances and break Reset).
+    cfg.seriesColors = { ...(saved.seriesColors || {}) };
+    cfg.seriesOrder = [...(saved.seriesOrder || [])];
+    return cfg;
   }
   let saveTimer = null, saveInFlight = false, savePending = false;
   function saveConfig() {

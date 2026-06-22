@@ -359,7 +359,8 @@
     // color domain (series totals) — shared by the bands and the legend.
     const totals = model.seriesList.map((s) => s.total);
     const loT = Math.min(...totals), hiT = Math.max(...totals);
-    ensureSeriesOrder(model);   // lock in stable palette slots per series identity
+    // lock in stable palette slots per series identity (categorical palette only)
+    if (isCategoricalPalette()) ensureSeriesOrder(model);
     const colorOf = (si) => seriesColorFor(model, si, totals, loT, hiT);
 
     const wrap = el('div', 'sg');
@@ -548,17 +549,22 @@
       // gate only the selection on the interactivity toggle.
       item._tupleIds = s.tupleIds;     // read by applySelectionStyles for dimming
       item.classList.add('sg-legend-click');
-      item.title = 'Click to select · double-click to set color';
+      // Double-click colour-pick only makes sense in palette mode (sequential/
+      // single ignore per-series overrides); elsewhere the legend just selects.
+      const canPick = config.colorMode === 'palette';
+      item.title = canPick ? 'Click to select · double-click to set color' : 'Click to select';
       let clickTimer = null;
       item.addEventListener('click', (ev) => {
         ev.stopPropagation();
         if (!config.enableTooltips) return;
-        if (clickTimer) return;        // 2nd click of a dbl-click → ignore
         const additive = ev.ctrlKey || ev.metaKey;
+        if (!canPick) { toggleSelection(s.tupleIds, additive); return; }   // instant
+        if (clickTimer) return;        // 2nd click of a dbl-click → ignore
         clickTimer = setTimeout(() => { clickTimer = null; toggleSelection(s.tupleIds, additive); }, 220);
       });
       item.addEventListener('dblclick', (ev) => {
         ev.preventDefault(); ev.stopPropagation();
+        if (!canPick) return;
         if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
         pickSeriesColor(s.raw, colorOf(si));
       });
@@ -688,19 +694,29 @@
     const i = order.indexOf(rawKey);
     return i < 0 ? 0 : i;
   }
+  // The categorical palette mode (NOT the mono ramp) is the only place identity-
+  // stable slots + per-series overrides apply.
+  function isCategoricalPalette() {
+    return config.colorMode === 'palette' && config.palette !== 'mono';
+  }
+  // Per-series overrides + identity-stable palette slots apply ONLY in palette
+  // mode. In sequential mode color encodes the series total on a continuous
+  // low→high scale (an override would punch a hole in it); in single mode every
+  // stream is one color. Both ignore seriesColors/seriesOrder.
   function seriesColorFor(model, si, totals, lo, hi) {
     const s = model.seriesList[si];
-    const ov = config.seriesColors && config.seriesColors[s.raw];
-    if (ov) return ov;                                  // explicit override wins
     if (config.colorMode === 'single') return config.singleColor;
     if (config.colorMode === 'sequential') {
       const t = (hi <= lo) ? 0.5 : (totals[si] - lo) / (hi - lo);
       return mix(config.seqLowColor, config.seqHighColor, Math.max(0, Math.min(1, t)));
     }
+    // palette mode: an explicit per-series override always wins.
+    const ov = config.seriesColors && config.seriesColors[s.raw];
+    if (ov) return ov;
     const oi = stableIndex(s.raw);
     if (config.palette === 'mono') {
       const denom = Math.max(1, (config.seriesOrder || []).length - 1);
-      return mix(config.monoBaseColor, '#ffffff', (oi / denom) * 0.7);
+      return mix(config.monoBaseColor, '#ffffff', (oi / denom) * 0.7);   // rank ramp
     }
     const pal = PALETTES[config.palette] || PALETTES.cool;
     return pal[oi % pal.length];
@@ -1034,6 +1050,9 @@
   // reset-to-palette button. Built from lastModel (the schema is static, the
   // series are data-driven), so it only appears once fields are dropped.
   function buildSeriesColorsSection() {
+    // Per-series overrides only apply in palette mode — hide the section
+    // (would do nothing) in sequential/single.
+    if (config.colorMode !== 'palette') return null;
     if (!lastModel || !lastModel.seriesList.length) return null;
     const totals = lastModel.seriesList.map((s) => s.total);
     const loT = Math.min(...totals), hiT = Math.max(...totals);
