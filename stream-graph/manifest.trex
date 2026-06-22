@@ -30,6 +30,10 @@
            continuous MONTH(date) pill) on the axis. Multiple <role-type>
            children are a whitelist; without continuous-dimension Tableau blocks
            continuous pills on this tile. -->
+      <role-spec>
+        <role-type>discrete-dimension</role-type>
+        <role-type>continuous-dimension</role-type>
+      </role-spec>
       <fields max-count="1"/>
       <encoding-icon token="flow" />
       <tooltip>Axis - drag one ordered dimension here (e.g. month, discrete or continuous); it forms the horizontal axis.</tooltip>

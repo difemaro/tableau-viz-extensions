@@ -742,17 +742,6 @@
     if (m) return '#' + [1, 2, 3].map((i) => (+m[i]).toString(16).padStart(2, '0')).join('');
     return '#888888';
   }
-  function mix(hexA, hexB, t) {
-    const a = hexToRgb(hexA), b = hexToRgb(hexB);
-    const c = a.map((ch, i) => Math.round(ch + (b[i] - ch) * t));
-    return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
-  }
-  function hexToRgb(hex) {
-    const h = String(hex).replace('#', '');
-    const f = h.length === 3 ? h.split('').map((x) => x + x).join('') : h;
-    const num = parseInt(f, 16);
-    return [(num >> 16) & 255, (num >> 8) & 255, num & 255];
-  }
 
   /* =========================================================
      INTERACTIVITY — native Tableau tooltip + per-cell selection
