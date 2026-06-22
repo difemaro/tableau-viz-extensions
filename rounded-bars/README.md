@@ -66,7 +66,11 @@ every option applies live and persists into the workbook. Highlights:
   selection. (Defaults to a dark theme — the gradient pops on dark.)
 - **Layout** — orientation (horizontal bars / vertical columns), sort, fit-to-pane
   vs. fixed bar slot (then the pane scrolls), bar thickness, corner radius
-  (0 = square … 1 = full pill), min length.
+  (0 = square … 1 = full pill), min length, and an optional **zero baseline line**.
+- **Negative values** — bars are measured from a **zero baseline**: positive bars
+  grow one way from zero, negatives the other, with the value label on the bar's
+  outer end and a faint zero line (shown only when the data spans both signs).
+  All-positive data is unaffected (zero sits at the edge, like a plain bar chart).
 - **Color** — the gradient system:
   - **Gradient (uniform)** — every bar uses the same start→end gradient.
   - **Gradient by value** — the gradient brightens with the bar's value (each bar

@@ -50,6 +50,7 @@
     barThickness: 0.62,         // bar thickness as a fraction of its slot
     cornerRadius: 1,            // 0..1 of half-thickness (1 = full pill)
     barMinLength: 6,            // keep tiny values visible
+    showZeroLine: true,         // baseline marker at zero (only when values span +/-)
 
     // COLOR — the signature gradient system
     colorMode: 'gradient',      // gradient | gradient-value | divergent | palette | single
@@ -297,7 +298,14 @@
     const headH = (titleEl ? titleEl.offsetHeight : 0) + (subtitleEl ? subtitleEl.offsetHeight : 0);
     const paneH = Math.max(60, availH - headH);
 
-    const maxVal = Math.max(1e-9, ...items.map((it) => it.value || 0));
+    // Value domain ALWAYS includes 0, so bars are measured from a zero baseline:
+    // positive bars grow one way from zero, negatives the other. With all-positive
+    // data zero sits at the edge → identical to a plain bar chart.
+    const vals = items.map((it) => it.value).filter((v) => v != null);
+    let dMin = Math.min(0, ...vals), dMax = Math.max(0, ...vals);
+    if (dMax === dMin) dMax = dMin + 1;   // avoid /0 when everything is 0/empty
+    const dom = { min: dMin, max: dMax };
+
     const svg = svgEl('svg', { class: 'rb-svg' });
     const defs = svgEl('defs', {});
     svg.appendChild(defs);
@@ -306,8 +314,8 @@
     // build + measure labels inside renderHorizontal/Vertical (an unattached SVG
     // measures 0, which would put every value label outside and never truncate).
     wrap.appendChild(svg);
-    if (config.orientation === 'vertical') renderVertical(model, items, n, maxVal, W, paneH, svg, defs);
-    else renderHorizontal(model, items, n, maxVal, W, paneH, svg, defs);
+    if (config.orientation === 'vertical') renderVertical(model, items, n, dom, W, paneH, svg, defs);
+    else renderHorizontal(model, items, n, dom, W, paneH, svg, defs);
 
     applySelectionStyles();
   }
@@ -344,7 +352,7 @@
   }
 
   // ---- horizontal bars (rows) ----
-  function renderHorizontal(model, items, n, maxVal, W, paneH, svg, defs) {
+  function renderHorizontal(model, items, n, dom, W, paneH, svg, defs) {
     const catGutter = config.showCategoryLabels ? config.labelWidth : 8;
     const valGutter = config.showValueLabels ? Math.max(46, config.valueLabelSize * 4) : 8;
     const pad = { top: 6, bottom: 6, left: catGutter + 8, right: valGutter + 8 };
@@ -370,11 +378,30 @@
     const rowYs = [];
     { let yc = plotTop; for (let i = 0; i < n; i++) { if (bmap.has(i)) yc += config.groupGap * gapWeight(bmap.get(i), nLevels); rowYs.push(yc + band / 2); yc += band; } }
 
+    // value → x, with a zero baseline (positive bars grow right of zero, negative
+    // bars left of it).
+    const span = Math.max(1e-9, dom.max - dom.min);
+    const xOf = (v) => plotLeft + (v - dom.min) / span * barMax;
+    const zeroX = xOf(0);
+
+    // zero baseline marker (behind the bars), only when values span both signs.
+    if (config.showZeroLine && dom.min < 0 && dom.max > 0) {
+      svg.appendChild(svgEl('line', { class: 'rb-zero', x1: zeroX, y1: plotTop, x2: zeroX, y2: plotBottom,
+        stroke: config.mutedColor, 'stroke-width': 1, 'stroke-opacity': 0.4 }));
+    }
+
     const valueLabels = [];
     items.forEach((it, i) => {
       const cy = rowYs[i];
       const th = Math.max(2, Math.min(band - 2, band * config.barThickness));
-      const len = it.value == null ? 0 : Math.max(config.barMinLength, (it.value / maxVal) * barMax);
+      const neg = it.value != null && it.value < 0;
+      // signed bar from the zero baseline to the value
+      let bx = zeroX, bw = 0;
+      if (it.value != null) {
+        const xv = xOf(it.value);
+        bx = Math.min(zeroX, xv); bw = Math.abs(xv - zeroX);
+        if (bw < config.barMinLength) { bw = config.barMinLength; bx = neg ? zeroX - bw : zeroX; }
+      }
       const fill = barFill(it, i, model, defs, true);
 
       const g = svgEl('g', { class: 'rb-item rb-interactive' });
@@ -388,8 +415,8 @@
           rx: rxFor(th, barMax), fill: config.trackColor }));
       }
       if (it.value != null) {
-        g.appendChild(svgEl('rect', { class: 'rb-bar', x: plotLeft, y: cy - th / 2, width: len, height: th,
-          rx: rxFor(th, len), fill: fill }));
+        g.appendChild(svgEl('rect', { class: 'rb-bar', x: bx, y: cy - th / 2, width: bw, height: th,
+          rx: rxFor(th, bw), fill: fill }));
       }
       if (config.showCategoryLabels) {
         if (nLevels <= 1) {
@@ -412,7 +439,7 @@
         const t = svgEl('text', { class: 'rb-val', y: cy, 'dominant-baseline': 'middle', 'font-size': config.valueLabelSize });
         t.textContent = formatNumber(it.value);
         g.appendChild(t);
-        valueLabels.push({ t, end: plotLeft + len, tipColor: g._curColor });
+        valueLabels.push({ t, left: bx, right: bx + bw, neg, tipColor: g._curColor });
       }
     });
 
@@ -463,27 +490,28 @@
     }
   }
 
+  // Place each value label just past the bar's OUTER end (left of a negative bar,
+  // right of a positive one); flip inside (contrast color) when it would overflow.
   function placeValueLabelsH(labels, W) {
+    const force = config.valueLabelPlacement;
     labels.forEach((L) => {
-      // tentatively outside
-      L.t.setAttribute('x', L.end + 8);
-      L.t.setAttribute('text-anchor', 'start');
       L.t.setAttribute('fill', config.textColor);
-      let w = 0;
-      try { w = L.t.getBBox().width; } catch (e) { w = 0; }
-      const force = config.valueLabelPlacement;
-      const overflow = (L.end + 8 + w) > (W - 2);
-      const inside = force === 'inside' || (force !== 'outside' && overflow);
-      if (inside) {
-        L.t.setAttribute('x', L.end - 8);
-        L.t.setAttribute('text-anchor', 'end');
-        L.t.setAttribute('fill', contrastInk(L.tipColor));
+      if (L.neg) {
+        L.t.setAttribute('x', L.left - 8); L.t.setAttribute('text-anchor', 'end');
+        let w = 0; try { w = L.t.getBBox().width; } catch (e) { w = 0; }
+        const inside = force === 'inside' || (force !== 'outside' && (L.left - 8 - w) < 2);
+        if (inside) { L.t.setAttribute('x', L.left + 8); L.t.setAttribute('text-anchor', 'start'); L.t.setAttribute('fill', contrastInk(L.tipColor)); }
+      } else {
+        L.t.setAttribute('x', L.right + 8); L.t.setAttribute('text-anchor', 'start');
+        let w = 0; try { w = L.t.getBBox().width; } catch (e) { w = 0; }
+        const inside = force === 'inside' || (force !== 'outside' && (L.right + 8 + w) > (W - 2));
+        if (inside) { L.t.setAttribute('x', L.right - 8); L.t.setAttribute('text-anchor', 'end'); L.t.setAttribute('fill', contrastInk(L.tipColor)); }
       }
     });
   }
 
   // ---- vertical columns ----
-  function renderVertical(model, items, n, maxVal, W, paneH, svg, defs) {
+  function renderVertical(model, items, n, dom, W, paneH, svg, defs) {
     const catMode = config.categoryLabelMode;
     const nLevels = (model.catFields || []).length;
     const rowH = config.categoryLabelSize + 9;
@@ -526,10 +554,31 @@
     const colXs = [];
     { let xc = plotLeft; for (let i = 0; i < n; i++) { if (bmap.has(i)) xc += config.groupGap * gapWeight(bmap.get(i), nLevels); colXs.push(xc + band / 2); xc += band; } }
 
+    // value → y, with a zero baseline (positive bars grow up from zero, negative
+    // bars down from it).
+    const span = Math.max(1e-9, dom.max - dom.min);
+    const yOf = (v) => plotBottom - (v - dom.min) / span * barMax;
+    const zeroY = yOf(0);
+
+    if (config.showZeroLine && dom.min < 0 && dom.max > 0) {
+      svg.appendChild(svgEl('line', { class: 'rb-zero', x1: plotLeft, y1: zeroY, x2: plotRight, y2: zeroY,
+        stroke: config.mutedColor, 'stroke-width': 1, 'stroke-opacity': 0.4 }));
+    }
+
     items.forEach((it, i) => {
       const cx = colXs[i];
       const th = Math.max(2, Math.min(band - 2, band * config.barThickness));
-      const h = it.value == null ? 0 : Math.max(config.barMinLength, (it.value / maxVal) * barMax);
+      const neg = it.value != null && it.value < 0;
+      let barTop = zeroY, barBot = zeroY;
+      if (it.value != null) {
+        const yv = yOf(it.value);
+        barTop = Math.min(zeroY, yv); barBot = Math.max(zeroY, yv);
+        if (barBot - barTop < config.barMinLength) {
+          if (neg) { barTop = zeroY; barBot = zeroY + config.barMinLength; }
+          else { barBot = zeroY; barTop = zeroY - config.barMinLength; }
+        }
+      }
+      const bh = barBot - barTop;
       const fill = barFill(it, i, model, defs, false);
 
       const g = svgEl('g', { class: 'rb-item rb-interactive' });
@@ -543,22 +592,23 @@
           rx: rxFor(th, barMax), fill: config.trackColor }));
       }
       if (it.value != null) {
-        g.appendChild(svgEl('rect', { class: 'rb-bar', x: cx - th / 2, y: plotBottom - h, width: th, height: h,
-          rx: rxFor(th, h), fill: fill }));
+        g.appendChild(svgEl('rect', { class: 'rb-bar', x: cx - th / 2, y: barTop, width: th, height: bh,
+          rx: rxFor(th, bh), fill: fill }));
       }
       if (config.showValueLabels && it.value != null) {
-        // rotated -90° (reads bottom→top) to avoid colliding across narrow
-        // columns; inside near the top for tall bars, just above for short ones.
+        // rotated -90° (reads bottom→top); placed at the OUTER tip — above a
+        // positive column, below a negative one — inside when there's room.
         const t = svgEl('text', { class: 'rb-val', 'font-size': config.valueLabelSize });
         t.textContent = formatNumber(it.value);
         g.appendChild(t);
         let len = 0; try { len = t.getComputedTextLength(); } catch (e) { len = 0; }
-        const topY = plotBottom - h;
         const place = config.valueLabelPlacement;
-        const inside = place === 'inside' || (place !== 'outside' && (h - 14) >= len);
-        const py = inside ? topY + 8 : topY - 8;
+        const inside = place === 'inside' || (place !== 'outside' && (bh - 14) >= len);
+        let py, anchor;
+        if (neg) { py = inside ? barBot - 8 : barBot + 8; anchor = inside ? 'start' : 'end'; }
+        else { py = inside ? barTop + 8 : barTop - 8; anchor = inside ? 'end' : 'start'; }
         t.setAttribute('x', cx); t.setAttribute('y', py);
-        t.setAttribute('text-anchor', inside ? 'end' : 'start');
+        t.setAttribute('text-anchor', anchor);
         t.setAttribute('dominant-baseline', 'central');
         t.setAttribute('transform', `rotate(-90 ${cx} ${py})`);
         t.setAttribute('fill', inside ? contrastInk(g._curColor) : config.textColor);
@@ -688,6 +738,9 @@
       const t = (model.max <= model.min || it.value == null) ? 1 : (it.value - model.min) / (model.max - model.min);
       c1 = mix(config.gradientStart, config.gradientEnd, Math.max(0.06, t));  // end brightens with value
     }
+    // a negative bar grows left of zero → flip the stops so the zero end keeps the
+    // same (start) color as positive bars.
+    if (it.value != null && it.value < 0) { const tmp = c0; c0 = c1; c1 = tmp; }
     const id = 'rb-g-' + i;
     defs.appendChild(linearGradient(id, c0, c1, gradCoords(horiz)));
     return 'url(#' + id + ')';
@@ -1036,6 +1089,7 @@
       { key: 'barThickness', label: 'Bar thickness', type: 'range', min: 0.15, max: 0.98, step: 0.02 },
       { key: 'cornerRadius', label: 'Corner radius (pill)', type: 'range', min: 0, max: 1, step: 0.05 },
       { key: 'barMinLength', label: 'Min bar length (px)', type: 'range', min: 0, max: 30, step: 1 },
+      { key: 'showZeroLine', label: 'Zero baseline line', type: 'checkbox' },
     ]},
     { section: 'Color', fields: [
       { key: 'colorMode', label: 'Color mode', type: 'select',
