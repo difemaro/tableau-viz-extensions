@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Rounded Bars — Viz Extension</title>
+
+  <!-- Tableau Extensions API — shared across all extensions in this workspace
+       (served from the repo root at /lib). Requires serving the Viz_Extensions
+       root, not this folder. -->
+  <script src="../lib/tableau.extensions.1.latest.js"></script>
+
+  <link rel="stylesheet" href="./src/style.css" />
+</head>
+<body class="tableau-worksheet">
+  <div id="viz"></div>
+
+  <button id="cfg-open" title="Configure" aria-label="Configure">&#9881;</button>
+
+  <div id="cfg-overlay" hidden>
+    <div id="cfg-modal" role="dialog" aria-modal="true" aria-label="Chart settings">
+      <header id="cfg-head">
+        <span id="cfg-title">Settings</span>
+        <div class="cfg-head-actions">
+          <button id="cfg-reset" type="button">Reset</button>
+          <button id="cfg-done" type="button">Done</button>
+        </div>
+      </header>
+      <div id="cfg-body"><!-- sections injected here --></div>
+    </div>
+  </div>
+
+  <script src="./src/viz.js"></script>
+</body>
+</html>

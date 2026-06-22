@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest manifest-version="0.1" xmlns="http://www.tableau.com/xml/extension_manifest">
+  <worksheet-extension id="co.modux.viz.roundedbars" extension-version="1.0.0">
+    <default-locale>en_US</default-locale>
+    <name resource-id="name"/>
+    <description>Rounded Bars — pill-shaped bars or columns, one per category, each painted with a linear gradient along its length. Horizontal or vertical, gradient/palette/single coloring with per-bar overrides. Fully customizable from a config modal.</description>
+    <author name="Diego Martinez" email="dmartinez@modux.co" organization="Modux" website="https://www.modux.co"/>
+    <!-- 1.12 = Tableau 2024.2; required for the Format Extension button. -->
+    <min-api-version>1.12</min-api-version>
+    <source-location>
+      <!-- HOSTED on GitHub Pages. The shared lib lives at the repo root, so this
+           extension stays under its subfolder. Use THIS manifest to add the
+           published extension in Tableau. -->
+      <url>https://difemaro.github.io/tableau-viz-extensions/rounded-bars/index.html</url>
+    </source-location>
+    <icon/>
+    <context-menu>
+      <configure-context-menu-item />
+    </context-menu>
+    <encoding id="category">
+      <display-name>Category</display-name>
+      <role-spec>
+        <role-type>discrete-dimension</role-type>
+        <role-type>continuous-dimension</role-type>
+      </role-spec>
+      <fields max-count="5"/>
+      <encoding-icon token="level" />
+      <tooltip>Category - drag one or more dimensions here; one rounded bar is drawn per unique combination.</tooltip>
+    </encoding>
+    <encoding id="value">
+      <display-name>Value</display-name>
+      <role-spec>
+        <role-type>continuous-measure</role-type>
+      </role-spec>
+      <fields max-count="1"/>
+      <encoding-icon token="metric" />
+      <tooltip>Value - drag one measure here; it drives each bar's length.</tooltip>
+    </encoding>
+  </worksheet-extension>
+  <resources>
+    <resource id="name">
+      <text locale="en_US">Rounded Bars</text>
+    </resource>
+  </resources>
+</manifest>

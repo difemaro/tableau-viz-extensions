@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Preview — Rounded Bars (no Tableau needed)</title>
+  <link rel="stylesheet" href="./src/style.css" />
+</head>
+<body class="tableau-worksheet">
+  <div id="viz"></div>
+  <button id="cfg-open" title="Configure" aria-label="Configure">&#9881;</button>
+  <div id="cfg-overlay" hidden>
+    <div id="cfg-modal" role="dialog" aria-modal="true" aria-label="Chart settings">
+      <header id="cfg-head">
+        <span id="cfg-title">Settings</span>
+        <div class="cfg-head-actions">
+          <button id="cfg-reset" type="button">Reset</button>
+          <button id="cfg-done" type="button">Done</button>
+        </div>
+      </header>
+      <div id="cfg-body"></div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       MOCK of the Tableau Extensions API for local preview only.
+       Feeds sample Fund x AUM data (matching the design ref) so you
+       can iterate on the chart + modal without opening Tableau.
+       (index.html is what Tableau actually loads — not this file.)
+       ============================================================ -->
+  <script>
+    (function () {
+      const ROWS = [
+        ['JPMorgan 100% U.S. Treasury Securities MMF', 210646000000],
+        ['JPMorgan U.S. Government Money Market Fund', 119179800000],
+        ['Fidelity Investments MM Money Market Portfolio', 112078100000],
+        ['State Street SPDR S&P 500 ETF Trust', 102335600000],
+        ['BlackRock Liquidity Funds FedFund', 90575400000],
+        ['Vanguard 500 Index Fund', 87635300000],
+        ['iShares Core S&P 500 ETF', 85891500000],
+        ['Fidelity 500 Index Fund', 85290900000],
+        ['BlackRock Liquidity Funds Treasury Trust Fund', 83704500000],
+        ['JPMorgan Liquid Assets Money Market Fund', 81431400000],
+      ];
+      const columns = [
+        { fieldName: 'Fund', dataType: 'string' },
+        { fieldName: 'SUM(AUM)', dataType: 'float' },
+      ];
+      const data = ROWS.map(([c, v]) => [
+        { value: c, formattedValue: c },
+        { value: v, formattedValue: String(v) },
+      ]);
+
+      let selected = [];
+      const settingsStore = {};
+      window.tableau = {
+        TableauEventType: { SummaryDataChanged: 'summary-data-changed', MarkSelectionChanged: 'mark-selection-changed' },
+        SelectOptions: { Simple: 'select-options-simple', Toggle: 'select-options-toggle' },
+        extensions: {
+          initializeAsync: () => Promise.resolve(),
+          settings: {
+            get: (k) => settingsStore[k],
+            set: (k, v) => { settingsStore[k] = v; },
+            saveAsync: () => Promise.resolve(),
+          },
+          worksheetContent: {
+            worksheet: {
+              name: 'AUM by Fund (preview)',
+              addEventListener: () => {},
+              hoverTupleAsync: (id, tip) => { console.log('hoverTupleAsync', id, tip); return Promise.resolve(); },
+              selectTuplesAsync: (ids, opt) => { selected = ids.slice(); console.log('selectTuplesAsync', ids, opt); return Promise.resolve(); },
+              getSelectedMarksAsync: () => Promise.resolve({ data: [] }),
+              getVisualSpecificationAsync: () => Promise.resolve({
+                activeMarksSpecificationIndex: 0,
+                marksSpecifications: [{
+                  encodings: [
+                    { id: 'category', field: { name: 'Fund' } },
+                    { id: 'value', field: { name: 'AUM' } },
+                  ],
+                }],
+              }),
+              getSummaryDataReaderAsync: () => Promise.resolve({
+                pageCount: 1,
+                getPageAsync: () => Promise.resolve({ columns, data }),
+                releaseAsync: () => Promise.resolve(),
+              }),
+            },
+          },
+        },
+      };
+    })();
+  </script>
+  <script src="./src/viz.js"></script>
+</body>
+</html>
