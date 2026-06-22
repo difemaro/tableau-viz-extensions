@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest manifest-version="0.1" xmlns="http://www.tableau.com/xml/extension_manifest">
+  <worksheet-extension id="co.modux.viz.circularbar" extension-version="1.0.0">
+    <default-locale>en_US</default-locale>
+    <name resource-id="name"/>
+    <description>Circular bar chart — concentric rings, one per category; each colored arc's length encodes the measure against a faint full-circle track. Fully customizable from a config modal.</description>
+    <author name="Diego Martinez" email="dmartinez@modux.co" organization="Modux" website="https://www.modux.co"/>
+    <!-- 1.12 = Tableau 2024.2; required for the Format Extension button. -->
+    <min-api-version>1.12</min-api-version>
+    <source-location>
+      <!-- HOSTED on GitHub Pages. The shared lib lives at the repo root, so
+           this extension stays under its subfolder. Use THIS manifest (not
+           manifest.trex) to add the published extension in Tableau. -->
+      <url>https://difemaro.github.io/tableau-viz-extensions/circular-bar-chart/index.html</url>
+    </source-location>
+    <icon/>
+    <!-- Adds the "Format Extension" button to the Marks card (opens the
+         configure() callback registered in src/viz.js). Must come after <icon>
+         and before the <encoding> tiles. -->
+    <context-menu>
+      <configure-context-menu-item />
+    </context-menu>
+    <encoding id="category">
+      <display-name>Category</display-name>
+      <role-spec>
+        <role-type>discrete-dimension</role-type>
+        <role-type>discrete-measure</role-type>
+      </role-spec>
+      <fields max-count="5"/>
+      <encoding-icon token="level" />
+      <tooltip>Category - drag one or more dimensions here; each unique combination becomes a ring.</tooltip>
+    </encoding>
+    <encoding id="value">
+      <display-name>Value</display-name>
+      <role-spec>
+        <role-type>continuous-measure</role-type>
+      </role-spec>
+      <fields max-count="1"/>
+      <encoding-icon token="metric" />
+      <tooltip>Value - drag one measure here; it drives each arc's length.</tooltip>
+    </encoding>
+  </worksheet-extension>
+  <resources>
+    <resource id="name">
+      <text locale="en_US">Circular Bar Chart</text>
+    </resource>
+  </resources>
+</manifest>
