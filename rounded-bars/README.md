@@ -101,6 +101,9 @@ every option applies live and persists into the workbook. Highlights:
 - **Click** a bar → selects that mark (`selectTuplesAsync`), dimming the rest and
   driving cross-highlight / dashboard filters. Ctrl/Cmd-click adds; click empty
   space clears. **Drag** a marquee to select a region.
+- **Click a category label** → selects every mark in that group. Works at any
+  nesting level — clicking the inner label selects its bar, clicking a merged
+  outer label (e.g. "Technology") selects all bars under it.
 - **Double-click** a bar → color picker (per-bar override), in the modes that
   allow overrides.
 - Selection re-syncs on data change and on selections driven from other sheets.

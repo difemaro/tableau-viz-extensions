@@ -459,7 +459,7 @@
 
     // merged labels for the OUTER levels (one per group, centered across its
     // rows) → the nested highlight-table look.
-    if (config.showCategoryLabels && nLevels > 1) drawMergedLabelsH(svg, items, rowYs, nLevels, colW);
+    if (config.showCategoryLabels && nLevels > 1) drawMergedLabelsH(svg, items, rowYs, nLevels, colW, band);
 
     // place value labels: outside the bar end, or inside (contrast) when they'd
     // overflow the pane — measured now that the SVG is live.
@@ -469,7 +469,7 @@
   // Merged outer-level category labels: for each level L (0…nLevels-2), group
   // consecutive rows sharing the parts[0..L] prefix and draw the label once,
   // vertically centered across the group. Static (non-interactive) headers.
-  function drawMergedLabelsH(svg, items, rowYs, nLevels, colW) {
+  function drawMergedLabelsH(svg, items, rowYs, nLevels, colW, band) {
     const grp = svgEl('g', { class: 'rb-cat-merged' });
     svg.appendChild(grp);   // attach first so fitText can measure
     for (let L = 0; L < nLevels - 1; L++) {
@@ -479,15 +479,28 @@
         const cur = i < items.length ? items[i].parts.slice(0, L + 1).join(SEP) : null;
         if (cur !== prev) {
           const yc = (rowYs[start] + rowYs[i - 1]) / 2;
+          // interactive cell: clicking the merged label selects the whole group.
+          const cell = svgEl('g', { class: 'rb-interactive rb-grouphdr' });
+          cell._tupleIds = collectTuples(items, start, i);
+          cell._group = true;
+          grp.appendChild(cell);
+          const yTop = rowYs[start] - band / 2, yBot = rowYs[i - 1] + band / 2;
+          cell.appendChild(svgEl('rect', { x: L * colW, y: yTop, width: colW, height: Math.max(1, yBot - yTop), fill: 'transparent' }));
           const t = svgEl('text', { class: 'rb-cat', x: L * colW + 2, y: yc, 'text-anchor': 'start',
             'dominant-baseline': 'middle', 'font-size': config.categoryLabelSize,
             fill: config.textColor, 'font-weight': L === 0 ? 600 : 400 });
-          grp.appendChild(t);
+          cell.appendChild(t);
           fitText(t, items[start].parts[L], colW - 6);
           start = i;
         }
       }
     }
+  }
+  // Union of tuple ids for items[start..end-1] (a merged group).
+  function collectTuples(items, start, end) {
+    const out = [];
+    for (let k = start; k < end; k++) { const t = items[k].tupleIds; if (t) for (const id of t) out.push(id); }
+    return out;
   }
 
   // Place each value label just past the bar's OUTER end (left of a negative bar,
@@ -685,12 +698,17 @@
         const cur = i < items.length ? items[i].parts.slice(0, L + 1).join(SEP) : null;
         if (cur !== prev) {
           const xc = (colXs[start] + colXs[i - 1]) / 2;
-          const runW = (colXs[i - 1] - colXs[start]) + band;
+          const xL = colXs[start] - band / 2, xR = colXs[i - 1] + band / 2;
+          const cell = svgEl('g', { class: 'rb-interactive rb-grouphdr' });
+          cell._tupleIds = collectTuples(items, start, i);
+          cell._group = true;
+          grp.appendChild(cell);
+          cell.appendChild(svgEl('rect', { x: xL, y: yc - rowH / 2, width: Math.max(1, xR - xL), height: rowH, fill: 'transparent' }));
           const t = svgEl('text', { class: 'rb-cat', x: xc, y: yc, 'text-anchor': 'middle',
             'dominant-baseline': 'central', 'font-size': config.categoryLabelSize,
             fill: config.textColor, 'font-weight': L === 0 ? 600 : 400 });
-          grp.appendChild(t);
-          fitText(t, items[start].parts[L], runW - 8);
+          cell.appendChild(t);
+          fitText(t, items[start].parts[L], (xR - xL) - 8);
           start = i;
         }
       }
@@ -877,7 +895,8 @@
     host.addEventListener('mousemove', (ev) => {
       if (!config.enableTooltips || marqueeActive) return;
       const t = ev.target.closest && ev.target.closest('.rb-interactive');
-      if (!t) { clearHoverState(); return; }
+      // group-header cells aggregate many marks → no per-mark native tooltip.
+      if (!t || t._group) { clearHoverState(); return; }
       const now = (window.performance && performance.now()) || Date.now();
       if (t !== hoverEl || now - hoverAt > 50) { hoverEl = t; hoverAt = now; hoverTuple(t._tupleIds[0], ev); }
     });
@@ -886,7 +905,10 @@
       if (!config.enableTooltips) return;
       if (suppressClick) { suppressClick = false; return; }
       const t = ev.target.closest && ev.target.closest('.rb-interactive');
-      if (t && overridesAllowed()) {
+      if (t && t._group) {
+        // group label → select every mark in the group (no color-pick delay)
+        toggleSelection(t._tupleIds, ev.ctrlKey || ev.metaKey);
+      } else if (t && overridesAllowed()) {
         // delay so a double-click (color pick) can cancel the select
         if (clickTimer) return;
         const ids = t._tupleIds, additive = ev.ctrlKey || ev.metaKey;
